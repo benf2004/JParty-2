@@ -26,10 +26,13 @@ def resource_path(relative_path):
     theme = config.get('theme', 'default')
 
     resolved_file = os.path.join(base_path, "data", theme, relative_path)
+    print(resolved_file)
     if os.path.isfile(resolved_file):
         return resolved_file
 
     default_file = os.path.join(base_path, "data", "default", relative_path)
+    print("file not found, returning default")
+    print(default_file + "\n")
     return default_file
 
 

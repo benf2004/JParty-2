@@ -30,8 +30,8 @@ def list_to_game(s):
                 process_values = get_image_link(text)
                 text = process_values['text']
                 image_link = process_values['image_link']
-
-                questions.append(Question(index, text, answer, cat, image_link, None, value, dd))
+                if text != "":
+                    questions.append(Question(index, text, answer, cat, image_link, None, value, dd))
 
         boards.append(Board(categories, questions, dj=(n1 == 14)))
 
@@ -57,7 +57,7 @@ def get_image_link(text):
     # Getting the image link:
     image_link = None
     # Extract image link
-    image_link_pattern = r'https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
+    image_link_pattern = r'https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=,\'()]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=,\'()]*)'
     image_link = re.findall(image_link_pattern, text)
     if image_link:
         image_link = image_link[0]  # Take the first link if there are multiple
@@ -67,8 +67,7 @@ def get_image_link(text):
         logging.info(f"Question: {text}, image_link: {image_link}")
 
     # Remove image link from text:
-    text_extract_pattern = r'https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)'
-    text = re.sub(text_extract_pattern, '', text)
+    text = re.sub(image_link_pattern, '', text)
 
     return_values = {
         'text': text,
@@ -127,7 +126,7 @@ def get_JArchive_Game(game_id, wayback_url=None):
 
             # Extract image link
             text_to_re = str(text_obj)
-            image_link_pattern = r'(\bhttps:\/\/www\.j-archive\.com\b[^"]*)'
+            image_link_pattern = r'(\bhttps?:\/\/www\.j-archive\.com\b[^"]*)'
             image_link = re.findall(image_link_pattern, text_to_re)
             if image_link:
                 image_link = image_link[0]  # Take the first link if there are multiple

@@ -341,7 +341,7 @@ class Game(QObject):
         self.keystroke_manager.activate("ADMIN_SKIP_ROUND")
 
     def valid_game(self):
-        return self.data is not None and all(b.complete() for b in self.data.rounds)
+        return self.data is not None
 
     def open_responses(self):
         self.dc.borders.lights(True)

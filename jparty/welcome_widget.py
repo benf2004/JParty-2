@@ -362,6 +362,7 @@ class SettingsMenu(QDialog):
         self.theme_combobox.addItem("Default")
         self.theme_combobox.addItem("Christmas")
         self.theme_combobox.addItem("EightiesSynthwave")
+        self.theme_combobox.addItem("Birthday")
         self.theme_combobox.setCurrentText(current_theme)
 
         # Set the font to bold and text color to white
@@ -523,6 +524,7 @@ class SettingsMenu(QDialog):
         # Theme setting
         old_theme = config.get('theme', 'default')
         theme = self.theme_combobox.currentText()
+        logging.info("theme: " + theme)
         if theme != old_theme:
             requires_restart = True
 

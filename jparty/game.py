@@ -13,9 +13,11 @@ import logging
 import json
 import requests
 import datetime
+import http.server
+import socketserver
 
 from jparty.utils import SongPlayer, resource_path, CompoundObject
-from jparty.constants import FJTIME, QUESTIONTIME
+from jparty.constants import FJTIME, QUESTIONTIME, VIDEO_PORT
 from jparty.stats import StatsBox
 
 
@@ -126,6 +128,8 @@ class Question:
     answer: str
     category: str
     image_link: str = None
+    video_link: str = None
+    includes_audio: bool = False
     image_content: str = None
     value: int = -1
     dd: bool = False
@@ -182,8 +186,40 @@ class Game(QObject):
     def __init__(self):
         super().__init__()
 
-        with open('config.json', 'r') as f:
-            self.config = json.load(f)
+        with open('config.json', 'r') as config_file:
+            self.config = json.load(config_file)
+
+        with open(resource_path('theme_config.json'), 'r') as theme_config_file:
+            self.theme_config = json.load(theme_config_file)
+
+        print("theme_config:")
+        print(self.theme_config)
+        # Normalize color values from theme_config. Values are expected to be
+        # hex strings like "#RRGGBB" (user-specified). We expose both the
+        # raw hex string (for stylesheets) and a QColor (for painting).
+        colors_block = self.theme_config.get("colors", self.theme_config)
+
+        def _ensure_hash(s):
+            if s is None:
+                return None
+            if isinstance(s, str) and s.startswith("#"):
+                return s
+            if isinstance(s, str):
+                return f"#{s}"
+            return None
+
+        board_tile_color_hex = _ensure_hash(colors_block.get("boardTileColor")) or "#1E90FF"
+        board_tile_highlighted_color_hex = _ensure_hash(colors_block.get("boardTileHighlightedColor")) or "#0B3D91"
+
+        # Expose both hex (useful for stylesheets) and QColor (useful for painting)
+        self.board_tile_color_hex = board_tile_color_hex
+        self.board_tile_highlighted_color_hex = board_tile_highlighted_color_hex
+        self.board_tile_color = QColor(self.board_tile_color_hex)
+        self.board_tile_highlighted_color = QColor(self.board_tile_highlighted_color_hex)
+        logging.info(
+            f"Theme colors - board_tile_color: {self.board_tile_color_hex}, "
+            f"board_tile_highlighted_color: {self.board_tile_highlighted_color_hex}"
+        )
 
         self.host_display = None
         self.main_display = None
@@ -218,6 +254,9 @@ class Game(QObject):
         )
         self.keystroke_manager.addEvent(
             "BACK_TO_BOARD", Qt.Key.Key_Space, self.back_to_board, self.spacehints
+        )
+        self.keystroke_manager.addEvent(
+            "PLAY_AUDIO", Qt.Key.Key_Space, self.play_audio, self.spacehints
         )
         self.keystroke_manager.addEvent(
             "OPEN_RESPONSES", Qt.Key.Key_Space, self.open_responses, self.spacehints
@@ -262,6 +301,12 @@ class Game(QObject):
             self.arrowhints,
         )
         self.keystroke_manager.addEvent(
+            "ADMIN_SKIP_QUESTION",
+            Qt.Key.Key_0,
+            self.admin_skip_question,
+            self.adminhints,
+        )
+        self.keystroke_manager.addEvent(
             "ADMIN_SKIP_ROUND",
             Qt.Key.Key_F5,
             self.admin_skip_round,
@@ -281,6 +326,16 @@ class Game(QObject):
         self.buzz_trigger.connect(self.buzz)
         self.new_player_trigger.connect(self.new_player)
         self.toolate_trigger.connect(self.__toolate)
+
+        # Setup video server
+        def run_server():
+            with socketserver.TCPServer(("", VIDEO_PORT), http.server.SimpleHTTPRequestHandler) as httpd:
+                print("Serving videos at port", VIDEO_PORT)
+                httpd.serve_forever()
+
+        # Create a new thread and start the server
+        server_thread = threading.Thread(target=run_server)
+        server_thread.start()
 
     def show_stats(self):
         stats_box = StatsBox(self.host_display)
@@ -333,15 +388,34 @@ class Game(QObject):
         player.waiter.close()
         self.dc.scoreboard.refresh_players()
         self.host_display.welcome_widget.check_start()
+
+        # If the host removes a player in the final jeopardy round,
+        # check if all remaining players have already wagered
+        if isinstance(self.current_round, FinalBoard):
+            self.check_if_all_wagered()
     
     def admin_skip_round(self):
         if isinstance(self.current_round, FinalBoard):
             return
         self.next_round()
         self.keystroke_manager.activate("ADMIN_SKIP_ROUND")
+    
+    def admin_skip_question(self):
+        if not self.active_question:
+            return
+        self.keystroke_manager.deactivate("BACK_TO_BOARD", "OPEN_RESPONSES")
+        self.accepting_responses = False
+        self.dc.borders.lights(False)
+        self.soliciting_player = False
+        self.answer_given()
+        self.back_to_board()
 
     def valid_game(self):
         return self.data is not None
+
+    def play_audio(self):
+        self.host_display.question_widget.play_video()
+        self.keystroke_manager.activate("OPEN_RESPONSES")
 
     def open_responses(self):
         self.dc.borders.lights(True)
@@ -351,7 +425,6 @@ class Game(QObject):
         # Set stats for players who buzzed early
         for player in self.players:
             if player.buzz_time is not None:
-                logging.info(f"GARRETT setting stats for early buzz")
                 time_elapsed = datetime.datetime.now() - player.buzz_time
                 self.dc.player_widget(player).update_stats(time_elapsed.total_seconds(), "early")
                 player.buzz_time = None
@@ -360,6 +433,9 @@ class Game(QObject):
             self.timer = QuestionTimer(QUESTIONTIME, self.stumped)
 
         self.timer.start()
+
+        if self.active_question.includes_audio:
+            self.host_display.question_widget.hide_video()
 
     def close_responses(self):
         self.timer.pause()
@@ -415,8 +491,9 @@ class Game(QObject):
 
     def answer_given(self):
         self.keystroke_manager.deactivate("CORRECT_ANSWER", "INCORRECT_ANSWER")
-        self.dc.player_widget(self.answering_player).stop_lights()
-        self.answering_player = None
+        if self.answering_player:
+            self.dc.player_widget(self.answering_player).stop_lights()
+            self.answering_player = None
 
     def back_to_board(self):
         logging.info("back_to_board")
@@ -426,9 +503,8 @@ class Game(QObject):
         self.active_question = None
         self.previous_answerer = []
         if all(q.complete for q in self.current_round.questions):
-            logging.info("NEXT ROUND")
-            self.keystroke_manager.activate("NEXT_ROUND")
-            self.keystroke_manager.activate("ADMIN_SHOW_STATS")
+            logging.info("Ready for next round")
+            self.keystroke_manager.activate("ADMIN_SHOW_STATS", "NEXT_ROUND")
         
         # clear stats
         for player in self.players:
@@ -459,6 +535,7 @@ class Game(QObject):
             self.set_player_in_control(None)
 
             self.dc.load_final(self.current_round.question)
+            self.dc.show_player_kick_buttons()
             self.start_final()
         else:
             # Highlight player with least money to have control
@@ -510,17 +587,21 @@ class Game(QObject):
         player.wager = amount
         self.dc.player_widget(player).set_lights(False)
         logging.info(f"{player} wagered {amount}")
+        self.check_if_all_wagered()
+
+    def answer(self, player, guess):
+        player.finalanswer = guess
+        logging.info(f"{player} guessed {guess}")
+    
+    def check_if_all_wagered(self):
         if all(p.wager is not None for p in self.players):
             self.host_display.question_widget.hint_label.setText(
                 "Press space to show clue!"
             )
             self.keystroke_manager.activate("OPEN_FINAL")
 
-    def answer(self, player, guess):
-        player.finalanswer = guess
-        logging.info(f"{player} guessed {guess}")
-
     def final_open_responses(self):
+        self.dc.hide_player_kick_buttons()
         self.dc.borders.lights(True)
         self.buzzer_controller.prompt_answers()
 
@@ -636,15 +717,18 @@ class Game(QObject):
 
     def load_question(self, q):
         self.active_question = q
+        self.keystroke_manager.activate("ADMIN_SKIP_QUESTION")
+        self.dc.load_question(q)
+        self.dc.remove_card(q)
         if q.dd:
             logging.info("Daily double!")
             wo = sa.WaveObject.from_wave_file(resource_path("dd.wav"))
             wo.play()
             self.soliciting_player = True
+        elif q.includes_audio:
+            self.keystroke_manager.activate("PLAY_AUDIO")
         else:
             self.keystroke_manager.activate("OPEN_RESPONSES")
-        self.dc.load_question(q)
-        self.dc.remove_card(q)
 
     def open_final(self):
         self.dc.question_widget.show_question()

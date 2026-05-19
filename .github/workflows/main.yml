@@ -62,6 +62,7 @@ jobs:
           name: JParty_macos_arm
           path: dist/JParty_macos_arm # Assuming no extension for macos
 
+
   release:
     needs: [linux-build, windows-build, macos-arm-build]
     runs-on: ubuntu-latest
@@ -70,6 +71,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: List artifacts for debugging
+        run: find artifacts -type f -exec ls -lh {} \;
 
       - name: Create Release
         id: create_release
@@ -84,4 +88,4 @@ jobs:
             See the assets below for various platform builds.
           draft: false
           prerelease: false
-          files: artifacts/*/* # This will attach all files downloaded into the artifacts directory
+          files: artifacts/**

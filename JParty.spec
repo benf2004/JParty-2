@@ -34,10 +34,8 @@ pyz = PYZ(a.pure, a.zipped_data,
 
 exe = EXE(pyz,
           a.scripts,
-          a.binaries,
-          a.zipfiles,
-          a.datas,
           [],
+          exclude_binaries=True,
           name='JParty',
           debug=False,
           bootloader_ignore_signals=False,
@@ -48,8 +46,17 @@ exe = EXE(pyz,
           runtime_tmpdir=None,
           console=False , icon=iconfile)
 
+coll = COLLECT(exe,
+               a.binaries,
+               a.zipfiles,
+               a.datas,
+               strip=False,
+               upx=True,
+               upx_exclude=[],
+               name='JParty')
+
 if uname.system == "Darwin":
-    app = BUNDLE(exe,
+    app = BUNDLE(coll,
                  name='JParty.app',
                  version=version,
                  icon=iconfile,

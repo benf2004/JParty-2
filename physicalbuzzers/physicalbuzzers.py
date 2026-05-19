@@ -38,32 +38,56 @@ def sendBuzz(color):
 
 
 def run_buzzers():
-    if sys.platform == "darwin":
-        try:
-            # Try to hide the dock icon using AppKit via ctypes
-            objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
-            objc.objc_getClass.restype = ctypes.c_void_p
-            objc.sel_registerName.restype = ctypes.c_void_p
-            objc.objc_msgSend.restype = ctypes.c_void_p
-            
-            NSApplication = objc.objc_getClass(b'NSApplication')
-            sharedApplication_sel = objc.sel_registerName(b'sharedApplication')
-            shared_app = objc.objc_msgSend(NSApplication, sharedApplication_sel)
-            
-            if shared_app:
-                setActivationPolicy_sel = objc.sel_registerName(b'setActivationPolicy:')
-                # 2 = NSApplicationActivationPolicyProhibited
-                objc.objc_msgSend(shared_app, setActivationPolicy_sel, ctypes.c_long(2))
-        except Exception as e:
-            print(f"Could not hide dock icon: {e}")
-
-    pygame.init()
+    # Set environment variable to hide pygame support prompt
+    os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+    
+    pygame.joystick.init()
     if pygame.joystick.get_count() == 0:
         print("No joysticks connected.")
         return
 
-    j = pygame.joystick.Joystick(0)
-    j.init()
+    if sys.platform == "darwin":
+        try:
+            # Try to hide the dock icon using AppKit via ctypes
+            import ctypes.util
+            objc_path = ctypes.util.find_library('objc')
+            if objc_path:
+                objc = ctypes.cdll.LoadLibrary(objc_path)
+                
+                # Define types for safety
+                objc.objc_getClass.restype = ctypes.c_void_p
+                objc.objc_getClass.argtypes = [ctypes.c_char_p]
+                objc.sel_registerName.restype = ctypes.c_void_p
+                objc.sel_registerName.argtypes = [ctypes.c_char_p]
+                
+                # Use CFUNCTYPE for msgSend to be safe on ARM64
+                # msgSend(id, SEL) -> id
+                msgSend_type = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+                msgSend = msgSend_type(objc.objc_msgSend)
+                
+                nsapp_class = objc.objc_getClass(b'NSApplication')
+                shared_app_sel = objc.sel_registerName(b'sharedApplication')
+                shared_app = msgSend(nsapp_class, shared_app_sel)
+                
+                if shared_app:
+                    set_policy_sel = objc.sel_registerName(b'setActivationPolicy:')
+                    # msgSend(id, SEL, long) -> void
+                    msgSend_policy_type = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long)
+                    msgSend_policy = msgSend_policy_type(objc.objc_msgSend)
+                    # 2 = NSApplicationActivationPolicyProhibited
+                    msgSend_policy(shared_app, set_policy_sel, 2)
+                    print("Buzzer process hidden from dock.")
+        except Exception as e:
+            print(f"Could not hide dock icon: {e}")
+
+    pygame.event.init()
+    # Joystick was already initialized above
+    try:
+        j = pygame.joystick.Joystick(0)
+        j.init()
+    except pygame.error:
+        print("Could not initialize joystick 0")
+        return
 
     try:
         while True:
@@ -84,4 +108,6 @@ def run_buzzers():
         j.quit()
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     run_buzzers()

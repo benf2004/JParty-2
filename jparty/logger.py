@@ -88,5 +88,5 @@ class UncaughtHook(QObject):
             self._exception_caught.emit(log_msg)
 
 
-# create a global instance of our class to register the hook
-qt_exception_hook = UncaughtHook()
+# UncaughtHook will be instantiated by main.py after QApplication is ready.
+# qt_exception_hook = UncaughtHook()

@@ -6,7 +6,8 @@ import json
 from jparty.game import Question, Board, FinalBoard, GameData
 import logging
 import csv
-from jparty.constants import MONIES
+from jparty.constants import DEFAULT_CONFIG, MONIES
+from jparty.paths import config_path
 
 
 def list_to_game(s):
@@ -94,7 +95,15 @@ def get_Gsheet_game(file_id):
 
 def get_game(game_id):
     if len(str(game_id)) < 7:
-        return get_wayback_jarchive_game(game_id)
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
+
+        if config.get('use_wayback_first', DEFAULT_CONFIG['use_wayback_first']):
+            return get_wayback_jarchive_game(game_id)
+        return get_JArchive_Game(game_id)
     else:
         return get_Gsheet_game(str(game_id))
 

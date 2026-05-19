@@ -62,25 +62,8 @@ jobs:
           name: JParty_macos_arm
           path: dist/JParty_macos_arm # Assuming no extension for macos
 
-  macos-x86-build:
-    runs-on: macos-13
-    steps:
-      - name: Create Executable
-        id: pyinstaller_macos_x86
-        uses: sayyid5416/pyinstaller@v1
-        with:
-          python_ver: '3.11'
-          spec: 'JParty.spec'
-          requirements: 'requirements.txt'
-          upload_exe_with_name: 'JParty_macox_x86'
-      - name: Upload macOS x86 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: JParty_macox_x86
-          path: dist/JParty_macox_x86 # Assuming no extension for macos
-
   release:
-    needs: [linux-build, windows-build, macos-arm-build, macos-x86-build]
+    needs: [linux-build, windows-build, macos-arm-build]
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts

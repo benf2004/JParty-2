@@ -14,5 +14,6 @@ DEFAULT_CONFIG = {
   'showtextwithimages': 'Show both',
   'earlybuzztimeout': 500,
   'allownegative': 'True',
-  'allownegativeinfinal': 'True'
+  'allownegativeinfinal': 'True',
+  'use_wayback_first': True
 }

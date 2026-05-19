@@ -383,6 +383,7 @@ class SettingsMenu(QDialog):
         current_earlybuzztimeout = config.get('earlybuzztimeout', DEFAULT_CONFIG['earlybuzztimeout'])
         current_allownegative = config.get('allownegative', DEFAULT_CONFIG['allownegative'])
         current_allownegativeinfinal = config.get('allownegativeinfinal', DEFAULT_CONFIG['allownegativeinfinal'])
+        current_use_wayback_first = config.get('use_wayback_first', DEFAULT_CONFIG['use_wayback_first'])
 
         self.setWindowTitle("Settings")
         self.setFixedSize(400, 400)
@@ -474,6 +475,32 @@ class SettingsMenu(QDialog):
         earlybuzztimeout_layout = QHBoxLayout()
         earlybuzztimeout_layout.addWidget(earlybuzztimeout_label)
         earlybuzztimeout_layout.addWidget(self.earlybuzztimeout_combobox)
+
+        # Add a label for the "use_wayback_first" section
+        wayback_label = QLabel("Use Wayback Machine first:", self)
+
+        # Add a combo box for use_wayback_first selection
+        self.wayback_combobox = QComboBox(self)
+        self.wayback_combobox.addItem("True")
+        self.wayback_combobox.addItem("False")
+        self.wayback_combobox.setCurrentText("True" if current_use_wayback_first else "False")
+
+        # Set the font to bold and text color to white
+        font = self.wayback_combobox.font()
+        font.setBold(True)
+        self.wayback_combobox.setFont(font)
+        palette = self.wayback_combobox.palette()
+        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+        self.wayback_combobox.setPalette(palette)
+
+        # Add a white border around the dropdown menu
+        self.wayback_combobox.setStyleSheet("QComboBox { border: 2px solid white; }")
+
+        # Create a horizontal layout for the label and combo box
+        wayback_layout = QHBoxLayout()
+        wayback_layout.addWidget(wayback_label)
+        wayback_layout.addWidget(self.wayback_combobox)
+        layout.addLayout(wayback_layout)
 
         # Add a label for the "allownegative" section
         allownegative_label = QLabel("Allow Negatives:", self)
@@ -585,6 +612,9 @@ class SettingsMenu(QDialog):
         # Show allow negative in final setting
         allownegativeinfinal = self.allownegativeinfinal_combobox.currentText()
 
+        # Use Wayback Machine first setting
+        use_wayback_first = self.wayback_combobox.currentText() == "True"
+
         # Save config
         logging.info("Saving settings...")
         with open(config_path, 'w') as f:
@@ -593,7 +623,8 @@ class SettingsMenu(QDialog):
                 'showtextwithimages': showtextwithimages,
                 'earlybuzztimeout': earlybuzztimeout,
                 'allownegative': allownegative,
-                'allownegativeinfinal': allownegativeinfinal
+                'allownegativeinfinal': allownegativeinfinal,
+                'use_wayback_first': use_wayback_first
             }, f)
 
         if requires_restart:

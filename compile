@@ -15,4 +15,5 @@ case $(arch) in
         cd ..
 esac
 
+
 echo "Compiled for $(arch)"

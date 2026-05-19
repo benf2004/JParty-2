@@ -23,6 +23,7 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal
 
 import qrcode
 import time
+import datetime
 from threading import Thread
 import logging
 import json
@@ -35,7 +36,7 @@ from jparty.utils import resource_path, add_shadow, DynamicLabel, DynamicButton
 from jparty.helpmsg import helpmsg
 from jparty.style import WINDOWPAL
 from jparty.constants import DEFAULT_CONFIG
-from jparty.paths import config_path
+from jparty.paths import config_path, history_path
 
 
 class Image(qrcode.image.base.BaseImage):
@@ -139,7 +140,7 @@ class Welcome(StartWidget):
 
         button_layout = QVBoxLayout()
         self.start_button = DynamicButton("Start!", self)
-        self.start_button.clicked.connect(self.game.start_game)
+        self.start_button.clicked.connect(self.on_start)
         self.start_button.setEnabled(False)
 
         self.rand_button = DynamicButton("Random", self)
@@ -248,9 +249,11 @@ class Welcome(StartWidget):
         try:
             self.game.data = get_game(game_id)
             if self.game.valid_game():
-                self.summary_trigger.emit(
-                    self.game.data.date + "\n" + self.game.data.comments
-                )
+                summary = self.game.data.date + "\n" + self.game.data.comments
+                warning = self.played_warning(game_id)
+                if warning:
+                    summary = warning + "\n\n" + summary
+                self.summary_trigger.emit(summary)
             else:
                 self.summary_trigger.emit("Game has blank questions")
 
@@ -277,6 +280,45 @@ class Welcome(StartWidget):
             self.start_button.setEnabled(True)
         else:
             self.start_button.setEnabled(False)
+
+    def on_start(self):
+        self.game.start_game()
+        self.save_history()
+
+    def load_history(self):
+        if not os.path.exists(history_path):
+            return {}
+        try:
+            with open(history_path, "r") as f:
+                return json.load(f)
+        except Exception:
+            logging.exception("Failed to load game history")
+            return {}
+
+    def save_history(self):
+        game_id = self.textbox.text().strip()
+        if not game_id:
+            return
+
+        history = self.load_history()
+        history[game_id] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        try:
+            with open(history_path, "w") as f:
+                json.dump(history, f, indent=2)
+        except Exception:
+            logging.exception("Failed to save game history")
+
+    def played_warning(self, game_id):
+        game_id = str(game_id).strip()
+        if not game_id:
+            return ""
+
+        history = self.load_history()
+        played_date = history.get(game_id)
+        if played_date:
+            return f"Warning: you already played this game on {played_date}"
+        return ""
 
     def restart(self):
         self.show_summary(self)

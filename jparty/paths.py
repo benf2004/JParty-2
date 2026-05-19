@@ -16,9 +16,15 @@ def get_user_data_dir():
 user_data_dir = get_user_data_dir()
 config_path = str(user_data_dir / "config.json")
 log_path = str(user_data_dir / "latest.log")
+history_path = str(user_data_dir / "history.json")
 
 # Ensure config.json exists
 if not os.path.exists(config_path):
     from jparty.constants import DEFAULT_CONFIG
     with open(config_path, 'w') as f:
         json.dump(DEFAULT_CONFIG, f)
+
+# Ensure history.json exists
+if not os.path.exists(history_path):
+    with open(history_path, 'w') as f:
+        json.dump({}, f)

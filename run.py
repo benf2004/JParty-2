@@ -3,6 +3,7 @@ import time
 import os
 import json
 import subprocess
+import sys
 import signal
 from jparty.constants import DEFAULT_CONFIG
 
@@ -16,7 +17,9 @@ if not os.path.exists('config.json'):
 if __name__ == "__main__":
     print(os.getcwd())
     # Start the process and get the process object
-    process = subprocess.Popen(["python3", os.path.join("..", "physicalbuzzers", "physicalbuzzers.py")])
+    base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
+    buzzer_script = os.path.join(base_path, "physicalbuzzers", "physicalbuzzers.py")
+    process = subprocess.Popen(["python3", buzzer_script])
     time.sleep(1)
     try:
         main()

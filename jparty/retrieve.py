@@ -67,7 +67,8 @@ def get_links(text):
     link = re.findall(link_pattern, text)
     if link:
         link = link[0]  # Take the first link if there are multiple
-        logging.info(f"Question with link: {text}, link: {link}")    else:
+        logging.info(f"Question with link: {text}, link: {link}")
+    else:
         link = None
         logging.info(f"Question: {text}")
 

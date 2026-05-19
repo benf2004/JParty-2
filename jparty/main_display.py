@@ -59,11 +59,22 @@ class DisplayWindow(QMainWindow):
 
         self.setCentralWidget(self.newWidget)
 
-        monitor = QGuiApplication.screens()[self.monitor()].geometry()
-
-        self.setGeometry(monitor)
-
-        self.showFullScreen()
+        screens = QGuiApplication.screens()
+        if len(screens) >= 2:
+            target_monitor = self.monitor()
+            if target_monitor < len(screens):
+                monitor_geo = screens[target_monitor].geometry()
+                self.setGeometry(monitor_geo)
+                self.showFullScreen()
+            else:
+                self.show()
+        else:
+            # Single monitor mode: show as normal window
+            primary_geo = screens[0].geometry()
+            width = int(primary_geo.width() * 0.8)
+            height = int(primary_geo.height() * 0.8)
+            offset = 40 if self.host() else 80
+            self.setGeometry(primary_geo.x() + offset, primary_geo.y() + offset, width, height)
 
         self.show()
 

@@ -256,6 +256,7 @@ class ScoreBoard(QWidget):
         self.player_layout = QHBoxLayout()
         self.player_layout.addStretch()
         self.setLayout(self.player_layout)
+        self.__podium_pixmap = QPixmap(resource_path("podium.png"))
         self.show()
 
     def minimumHeight(self):
@@ -285,7 +286,7 @@ class ScoreBoard(QWidget):
     def paintEvent(self, event):
         qp = QPainter()
         qp.begin(self)
-        qp.drawPixmap(self.rect(), QPixmap(resource_path("podium.png")))
+        qp.drawPixmap(self.rect(), self.__podium_pixmap)
         qp.end()
 
 

@@ -19,6 +19,7 @@ import socketserver
 from jparty.utils import SongPlayer, resource_path, CompoundObject
 from jparty.constants import FJTIME, QUESTIONTIME, VIDEO_PORT
 from jparty.stats import StatsBox
+from jparty.paths import config_path
 
 
 class QuestionTimer(object):
@@ -186,7 +187,7 @@ class Game(QObject):
     def __init__(self):
         super().__init__()
 
-        with open('config.json', 'r') as config_file:
+        with open(config_path, 'r') as config_file:
             self.config = json.load(config_file)
 
         with open(resource_path('theme_config.json'), 'r') as theme_config_file:
@@ -354,7 +355,7 @@ class Game(QObject):
         self.buzzer_controller.accepting_players = False
         self.song_player.stop()
         # Update config when game starts in case host made some settings changes
-        with open('config.json', 'r') as f:
+        with open(config_path, 'r') as f:
             self.config = json.load(f)
 
         # preload images for first round

@@ -20,6 +20,7 @@ from PyQt6.QtCore import Qt
 from jparty.style import MyLabel, CARDPAL
 from jparty.constants import DEFAULT_CONFIG, VIDEO_PLAY_TIME
 from jparty.utils import get_base_path
+from jparty.paths import config_path
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -32,7 +33,7 @@ class QuestionWidget(QWidget):
         self.main_layout = QVBoxLayout()
 
         # Read the config.json file
-        with open('config.json', 'r') as f:
+        with open(config_path, 'r') as f:
             self.config = json.load(f)
 
         # Question text

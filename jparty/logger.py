@@ -7,9 +7,10 @@ from PyQt6.QtWidgets import QMessageBox, QApplication
 import webbrowser
 from urllib.parse import quote
 from jparty.version import version
-from jparty.environ import root
+from jparty.paths import log_path
 
-log_filename = os.path.join(root, "latest.log")
+log_filename = log_path
+os.makedirs(os.path.dirname(log_filename), exist_ok=True)
 logging.basicConfig(
     filename=log_filename, encoding="utf-8", level=logging.DEBUG, filemode="w"
 )

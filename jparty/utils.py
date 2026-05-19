@@ -9,6 +9,7 @@ import json
 from PyQt6.QtGui import QColor, QFontMetrics
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QPushButton, QSizePolicy
 from PyQt6.QtCore import Qt, QSize
+from jparty.paths import config_path
 
 def get_base_path(file=None):
     path = ""
@@ -21,14 +22,22 @@ def get_base_path(file=None):
         return path
     return os.path.join(path, file)
 
+_cached_theme = None
+
 def resource_path(relative_path):
+    global _cached_theme
     base_path = get_base_path()
 
-    # Read the current theme from the configuration file
-    with open('config.json', 'r') as f:
-        config = json.load(f)
+    # Read the current theme from the configuration file (cached)
+    if _cached_theme is None:
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            _cached_theme = config.get('theme', 'default')
+        except Exception:
+            _cached_theme = 'default'
 
-    theme = config.get('theme', 'default')
+    theme = _cached_theme
 
     resolved_file = os.path.join(base_path, "data", theme, relative_path)
     print(resolved_file)
@@ -137,10 +146,13 @@ class AutosizeWidget(object):
         self.autoresize()
 
     def autoresize(self):
-        if self.size().height() == 0 or self.text() == "":
+        if self.size().height() <= 0 or self.text() == "":
             return None
 
         fontsize = self.autofitsize()
+        if fontsize <= 0:
+            return None
+            
         font = self.font()
         font.setPixelSize(fontsize)
         self.setFont(font)
@@ -182,7 +194,11 @@ class AutosizeWidget(object):
 
         text = self.plaintext()
 
-        font.setPixelSize(int(self.initialSize()))
+        initial_size = int(self.initialSize())
+        if initial_size <= 0:
+            return 0
+            
+        font.setPixelSize(initial_size)
         size = font.pixelSize()
 
         def fullrect(font):

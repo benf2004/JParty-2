@@ -44,7 +44,7 @@ The host sees the answer on the laptop screen and can adjudicate with the arrow 
 ## Requirements:
 ### For running the app (binary)
 - macOS, Windows or Linux
-- Two monitors
+- Two monitors (recommended)
 - A device with web access for each player
 
 ### For compiling from source code

@@ -4,6 +4,9 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 import sys
 import requests
 import logging
+import subprocess
+import os
+import signal
 from simpleaudio._simpleaudio import SimpleaudioError
 
 
@@ -19,8 +22,8 @@ from jparty.constants import PORT
 def check_internet():
     """check internet connection"""
     try:
-        requests.get("http://www.j-archive.com/")
-    except requests.exceptions.ConnectionError:  # This is the correct syntax
+        requests.get("http://www.j-archive.com/", timeout=5)
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
         logging.error("Connection Error")
         QMessageBox.critical(
             None,
@@ -54,21 +57,33 @@ def audio_error():
 
 def check_second_monitor():
     if len(QApplication.instance().screens()) < 2:
-        logging.error("No two monitors")
-        QMessageBox.critical(
-            None,
-            "Two monitors needed!",
-            "JParty needs two separate displays. Please attach a second monitor or turn off mirroring and try again.",
-            buttons=QMessageBox.StandardButton.Abort,
-            defaultButton=QMessageBox.StandardButton.Abort,
-        )
-        sys.exit(1)
+        logging.warning("Only one monitor detected. JParty will open in dual-window mode on a single display.")
 
 
 def main():
 
     QApplication.setStyle(JPartyStyle())
     app = QApplication(sys.argv)
+
+    # Start the buzzer process after QApplication is initialized to ensure 
+    # the main app registers correctly with the OS first.
+    buzzer_process = None
+    try:
+        if getattr(sys, 'frozen', False):
+            # In PyInstaller bundled app, use sys.executable with --buzzers flag
+            # Set environment to hide pygame support prompt and ensure it doesn't try to be a GUI app
+            env = os.environ.copy()
+            env["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+            buzzer_process = subprocess.Popen([sys.executable, "--buzzers"], env=env)
+            logging.info("Started buzzer subprocess")
+        else:
+            base_path = os.path.abspath(".")
+            buzzer_script = os.path.join(base_path, "physicalbuzzers", "physicalbuzzers.py")
+            if os.path.exists(buzzer_script):
+                buzzer_process = subprocess.Popen([sys.executable, buzzer_script])
+                logging.info("Started buzzer subprocess (dev)")
+    except Exception as e:
+        logging.error(f"Could not start buzzer subprocess: {e}")
 
     check_second_monitor()
     check_internet()
@@ -126,6 +141,13 @@ def main():
         r = app.exec()
     finally:
         logging.info("terminated")
+        if buzzer_process:
+            buzzer_process.terminate()
+            try:
+                buzzer_process.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                os.kill(buzzer_process.pid, signal.SIGKILL)
+        
         if song_player:
             song_player.stop()
 

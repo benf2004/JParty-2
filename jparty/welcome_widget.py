@@ -35,6 +35,7 @@ from jparty.utils import resource_path, add_shadow, DynamicLabel, DynamicButton
 from jparty.helpmsg import helpmsg
 from jparty.style import WINDOWPAL
 from jparty.constants import DEFAULT_CONFIG
+from jparty.paths import config_path
 
 
 class Image(qrcode.image.base.BaseImage):
@@ -332,7 +333,7 @@ class SettingsMenu(QDialog):
         super().__init__(parent)
 
         # Read the current theme from the configuration file
-        with open('config.json', 'r') as f:
+        with open(config_path, 'r') as f:
             config = json.load(f)
 
         current_theme = config.get('theme', DEFAULT_CONFIG['theme'])
@@ -520,7 +521,7 @@ class SettingsMenu(QDialog):
         new_settings = {}
         requires_restart = False
 
-        with open('config.json', 'r') as f:
+        with open(config_path, 'r') as f:
             config = json.load(f)
         
         # Theme setting
@@ -544,7 +545,7 @@ class SettingsMenu(QDialog):
 
         # Save config
         logging.info("Saving settings...")
-        with open('config.json', 'w') as f:
+        with open(config_path, 'w') as f:
             json.dump({
                 'theme': theme,
                 'showtextwithimages': showtextwithimages,
@@ -555,5 +556,6 @@ class SettingsMenu(QDialog):
 
         if requires_restart:
             # Restart the application
-            os.execv(sys.executable, ['python'] + sys.argv)
+            # Use sys.executable as both the path and the first argument
+            os.execv(sys.executable, [sys.executable] + sys.argv)
         self.accept()  # Close the dialog

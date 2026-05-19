@@ -33,6 +33,7 @@ import sys
 
 from jparty.constants import DEFAULT_CONFIG
 from jparty.scoreboard import NameLabel
+from jparty.paths import config_path
 
 stats_labels = [
     "Players",

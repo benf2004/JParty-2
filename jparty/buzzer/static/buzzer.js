@@ -65,16 +65,18 @@ function getToken() {
   return "";
 }
 
-function send(msg, text="", buzzerColor) {
+function send(msg, text="", buzzerColor, extra={}) {
     var message = {
         message:msg,
         text: text,
         buzzerColor: buzzerColor
     };
+    Object.assign(message, extra);
     updater.socket.send(JSON.stringify(message));
 }
-function wagerForm() {
-    var amount =$("input[name='wager']").val().replace(/[\s,]/g, '');
+function wagerForm(form) {
+    var scope = form ? $(form) : $(document);
+    var amount = scope.find("input[name='wager']").val().replace(/[\s,]/g, '');
     if (amount != "") {
         send("WAGER", amount);
         load_page(null);
@@ -91,22 +93,57 @@ function answerForm() {
 
 function cluePick(categoryIndex, row) {
     send("CLUE_PICK", categoryIndex + "," + row);
-    load_page(null);
-}
-
-function requestChallenge() {
-    send("CHALLENGE_REQUEST");
-    $("#judgement-text").text("Challenge requested");
-}
-
-function acceptJudgement() {
-    send("JUDGEMENT_ACCEPT");
-    load_page(null);
+    load_page("buzz");
 }
 
 function challengeVote(vote) {
     send("CHALLENGE_VOTE", vote);
     load_page(null);
+}
+
+function startGameVote() {
+    send("START_GAME_VOTE");
+    $("#buzz-status").text("Start vote recorded");
+    $("#start-game-button").prop("disabled", true);
+}
+
+function playAgainVote() {
+    send("PLAY_AGAIN_VOTE");
+    $("#buzz-status").text("Play again vote recorded");
+    $("#play-again-button").prop("disabled", true);
+}
+
+function disputeLastClue() {
+    send("DISPUTE_REQUEST");
+    $(".dispute-button").prop("disabled", true);
+}
+
+function disputeVote(choice) {
+    send("DISPUTE_VOTE", choice);
+    $("#dispute-status").text("Vote recorded");
+    $("#dispute-options button").prop("disabled", true);
+}
+
+function setAutoHostControls(payload) {
+    payload = payload || {};
+    $("#start-game-button").toggle(!!payload.can_start_game).prop("disabled", false);
+    $("#play-again-button").toggle(!!payload.can_play_again).prop("disabled", false);
+    $(".dispute-button").toggle(!!payload.can_dispute).prop("disabled", false);
+}
+
+function openDisputeVote(payload) {
+    $("#dispute-text").text(payload.message || "Vote on the last clue");
+    var options = $("#dispute-options");
+    options.empty();
+    (payload.options || []).forEach(function(option) {
+        $("<button>")
+            .addClass("jparty-button dispute-option")
+            .text(option.label)
+            .on("click", function() { disputeVote(option.id); })
+            .appendTo(options);
+    });
+    $("#dispute-status").text("30 seconds to vote");
+    load_page("dispute");
 }
 
 function setAutoHostPayload(payload) {
@@ -119,6 +156,32 @@ function setAutoHostPayload(payload) {
     if (payload.max_wager !== undefined) {
         set_max_wager(payload.max_wager);
     }
+}
+
+function autoHostAutoStartDelay(payload, defaultDelay) {
+    if (payload && payload.auto_start_delay_ms !== undefined) {
+        return Number(payload.auto_start_delay_ms);
+    }
+    return defaultDelay;
+}
+
+function setAnswerRecordPrompt(payload) {
+    var prompt = "Speak now";
+    if (payload && payload.prompt) {
+        prompt = payload.prompt;
+    }
+    $("#answer-record-prompt").text(prompt);
+    $("#answer-record-status").text("");
+}
+
+function autoHostStatus(purpose) {
+    if (purpose === "answer") {
+        return $("#answer-record-status");
+    }
+    if (purpose === "daily_double_wager") {
+        return $("#dd-wager-status");
+    }
+    return $("#recording-status");
 }
 
 function renderClueGrid(payload) {
@@ -159,12 +222,13 @@ function supportedAudioType() {
 
 async function recordAutoHostAudio(purpose) {
     if (!navigator.mediaDevices || !window.MediaRecorder) {
-        alert("Microphone recording is not available. Please use the on-screen fallback.");
+        alert("Microphone recording is not available in this browser context. Use the HTTPS buzzer URL, accept/trust the local JParty certificate if prompted, or use the on-screen fallback.");
         return;
     }
 
-    var status = $("#recording-status");
-    status.text("Recording...");
+    var status = autoHostStatus(purpose);
+    status.addClass("active");
+    status.text("Speak now");
     try {
         var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         var mimeType = supportedAudioType();
@@ -178,6 +242,8 @@ async function recordAutoHostAudio(purpose) {
         };
         recorder.onstop = async function() {
             stream.getTracks().forEach(function(track) { track.stop(); });
+            status.removeClass("active");
+            status.text("Sending...");
             var blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
             await uploadAutoHostAudio(purpose, blob);
         };
@@ -186,16 +252,17 @@ async function recordAutoHostAudio(purpose) {
             if (recorder.state === "recording") {
                 recorder.stop();
             }
-        }, purpose === "answer" ? 5500 : 3500);
+        }, purpose === "answer" ? 5500 : (purpose === "daily_double_wager" ? 4500 : 3500));
     } catch (err) {
         console.log(err);
+        status.removeClass("active");
         status.text("");
-        alert("Could not access the microphone. Please use the on-screen fallback.");
+        alert("Could not access the microphone. Allow mic permission for the HTTPS JParty page, or use the on-screen fallback.");
     }
 }
 
 async function uploadAutoHostAudio(purpose, blob) {
-    var status = $("#recording-status");
+    var status = autoHostStatus(purpose);
     status.text("Sending...");
     var form = new FormData();
     form.append("token", getToken());
@@ -207,7 +274,15 @@ async function uploadAutoHostAudio(purpose, blob) {
         if (!response.ok) {
             throw new Error("Upload failed");
         }
-        status.text("Sent");
+        if (purpose === "answer") {
+            status.text("Judging...");
+        } else if (purpose === "clue_selection") {
+            status.text("Finding clue...");
+        } else if (purpose === "daily_double_wager") {
+            status.text("Reading wager...");
+        } else {
+            status.text("Sent");
+        }
     } catch (err) {
         console.log(err);
         status.text("");
@@ -215,9 +290,9 @@ async function uploadAutoHostAudio(purpose, blob) {
     }
 }
 
-function nameForm(name, buzzerColor) {
+function nameForm(name, buzzerColor, displayName="") {
     console.log(name);
-    send("NAME",name, buzzerColor);
+    send("NAME", name, buzzerColor, {displayName: displayName});
 }
 
 function set_max_wager(score) {
@@ -301,9 +376,14 @@ $(document).ready(function() {
             let buzzerColor = $("#buzzers").find(":selected").val()
             console.log("Selected buzzer color: " + buzzerColor)
             $("#buzzer").css("background-color", buzzerColor)
+            let displayName = $("input[name='displayname']").val().trim();
+            if (displayName == "") {
+                alert("Please type your name too");
+                return;
+            }
             let image = signaturePad.toDataURL();
             console.log(image);
-            nameForm(image, buzzerColor);
+            nameForm(image, buzzerColor, displayName);
         }
         else {
             alert("Please make sure you signed your name and selected a buzzer")
@@ -319,7 +399,8 @@ var updater = {
     socket: null,
 
     start: function() {
-        var url = "ws://" + location.host + "/buzzersocket";
+        var socketScheme = location.protocol === "https:" ? "wss://" : "ws://";
+        var url = socketScheme + location.host + "/buzzersocket";
         updater.socket = new WebSocket(url);
         updater.socket.onclose = function(event) { location.reload(true); };
         updater.socket.onmessage = function(event) {
@@ -358,21 +439,56 @@ var updater = {
                     answerForm();
                     break;
                 case "PROMPT_SELECT_CLUE":
-                    setAutoHostPayload(JSON.parse(jsondata.text));
+                    var selectPayload = JSON.parse(jsondata.text);
+                    setAutoHostPayload(selectPayload);
+                    $("#recording-status").text("");
                     load_page("select");
+                    setTimeout(function() { recordAutoHostAudio("clue_selection"); }, autoHostAutoStartDelay(selectPayload, 800));
                     break;
                 case "PROMPT_RECORD_ANSWER":
+                    setAnswerRecordPrompt(JSON.parse(jsondata.text || "{}"));
                     load_page("record_answer");
                     break;
                 case "PROMPT_DD_WAGER":
                     set_max_wager(jsondata.text);
+                    $("#dd-wager-status").text("");
                     load_page("dd_wager");
+                    break;
+                case "PROMPT_BUZZ":
+                    load_page("buzz");
+                    break;
+                case "AUTO_HOST_CONTROLS":
+                    setAutoHostControls(JSON.parse(jsondata.text || "{}"));
+                    break;
+                case "PROMPT_START_GAME":
+                    setAutoHostControls({can_start_game: true});
+                    load_page("buzz");
+                    break;
+                case "PROMPT_PLAY_AGAIN":
+                    setAutoHostControls({can_play_again: true});
+                    load_page("buzz");
+                    break;
+                case "DISPUTE_OPEN":
+                    openDisputeVote(JSON.parse(jsondata.text || "{}"));
+                    break;
+                case "DISPUTE_RESULT":
+                    $("#dispute-status").text(jsondata.text);
+                    setTimeout(function() { load_page("buzz"); }, 1800);
+                    break;
+                case "DISPUTE_VOTE_RECORDED":
+                    $("#dispute-status").text(jsondata.text);
                     break;
                 case "JUDGEMENT_RESULT":
                     var judgement = JSON.parse(jsondata.text);
                     $("#judgement-text").text(judgement.verdict.toUpperCase());
-                    $("#judgement-reason").text(judgement.reason + " " + judgement.transcript);
+                    $("#judgement-reason").text(judgement.transcript);
                     load_page("judgement");
+                    setTimeout(function() { load_page("buzz"); }, 1800);
+                    break;
+                case "PROMPT_RECORD_ANSWER_AUTO":
+                    setAnswerRecordPrompt(JSON.parse(jsondata.text || "{}"));
+                    load_page("record_answer");
+                    setTimeout(function() { recordAutoHostAudio("answer"); }, 300);
                     break;
                 case "CHALLENGE_OPEN":
                     var challenge = JSON.parse(jsondata.text);
@@ -383,7 +499,15 @@ var updater = {
                     load_page("buzz");
                     break;
                 case "AUTO_HOST_FALLBACK":
-                    alert(jsondata.text);
+                    if (current_page === "select") {
+                        $("#recording-status").removeClass("active").text(jsondata.text);
+                    } else if (current_page === "dd_wager") {
+                        $("#dd-wager-status").removeClass("active").text(jsondata.text);
+                    } else if (current_page === "record_answer") {
+                        $("#answer-record-status").removeClass("active").text(jsondata.text);
+                    } else {
+                        console.log(jsondata.text);
+                    }
                     break;
             }
         }

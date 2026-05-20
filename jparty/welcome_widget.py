@@ -40,6 +40,22 @@ from jparty.style import WINDOWPAL
 from jparty.constants import DEFAULT_CONFIG, DESIGNER_URL
 from jparty.paths import config_path, history_path
 
+AUTO_HOST_VOICE_OPTIONS = [
+    ("alloy", "Neutral, balanced"),
+    ("ash", "Masculine, crisp"),
+    ("ballad", "Masculine, expressive"),
+    ("coral", "Feminine, bright"),
+    ("echo", "Masculine, warm"),
+    ("fable", "Neutral, animated"),
+    ("nova", "Feminine, energetic"),
+    ("onyx", "Masculine, deep"),
+    ("sage", "Neutral, calm"),
+    ("shimmer", "Feminine, warm"),
+    ("verse", "Neutral, smooth"),
+    ("marin", "Neutral, best quality"),
+    ("cedar", "Masculine, best quality"),
+]
+
 
 class Image(qrcode.image.base.BaseImage):
     """QR code image widget"""
@@ -378,7 +394,7 @@ class Welcome(StartWidget):
 
 
 class QRWidget(StartWidget):
-    def __init__(self, host, parent=None):
+    def __init__(self, url, parent=None):
         super().__init__(parent)
 
         self.font = QFont()
@@ -393,7 +409,7 @@ class QRWidget(StartWidget):
         self.qrlabel = QLabel(self)
         self.qrlabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.url = "http://" + host
+        self.url = url
         self.url_label = DynamicLabel(self.url, self.start_fontsize, self)
         self.url_label.setFont(self.font)
         self.url_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -419,6 +435,11 @@ class QRWidget(StartWidget):
                 self.url, image_factory=Image, box_size=max(self.height() / 50, 1)
             ).pixmap()
         )
+
+    def set_url(self, url):
+        self.url = url
+        self.url_label.setText(url)
+        self.resizeEvent(None)
 
     def restart(self):
         pass
@@ -638,6 +659,17 @@ class SettingsMenu(QDialog):
         auto_host_leniency_layout.addWidget(leniency_label)
         auto_host_leniency_layout.addWidget(self.auto_host_leniency_combobox)
 
+        voice_label = QLabel("Auto Host voice:", self)
+        self.auto_host_voice_combobox = QComboBox(self)
+        for voice, description in AUTO_HOST_VOICE_OPTIONS:
+            self.auto_host_voice_combobox.addItem(f"{voice} - {description}", voice)
+        current_voice_index = self.auto_host_voice_combobox.findData(current_auto_host.get('tts_voice', 'coral'))
+        self.auto_host_voice_combobox.setCurrentIndex(max(0, current_voice_index))
+
+        auto_host_voice_layout = QHBoxLayout()
+        auto_host_voice_layout.addWidget(voice_label)
+        auto_host_voice_layout.addWidget(self.auto_host_voice_combobox)
+
         openai_key_label = QLabel("OpenAI API Key:", self)
         self.openai_api_key_input = QLineEdit(self)
         self.openai_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -666,6 +698,7 @@ class SettingsMenu(QDialog):
         layout.addLayout(auto_host_layout)
         layout.addLayout(auto_host_provider_layout)
         layout.addLayout(auto_host_leniency_layout)
+        layout.addLayout(auto_host_voice_layout)
         layout.addLayout(openai_key_layout)
         layout.addWidget(openai_key_hint)
 
@@ -727,6 +760,7 @@ class SettingsMenu(QDialog):
         auto_host['enabled'] = self.auto_host_combobox.currentText() == "True"
         auto_host['ai_provider'] = self.auto_host_provider_combobox.currentText()
         auto_host['openai_api_key'] = self.openai_api_key_input.text().strip()
+        auto_host['tts_voice'] = self.auto_host_voice_combobox.currentData() or 'coral'
         auto_host['selection_mode'] = 'voice_with_gui_fallback'
         auto_host['answer_judging'] = 'auto_with_challenge'
         auto_host['leniency'] = self.auto_host_leniency_combobox.currentText()
@@ -744,6 +778,24 @@ class SettingsMenu(QDialog):
                 'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
                 'auto_host': auto_host,
             }, f)
+
+        try:
+            self.parent().game.config = config
+            self.parent().game.config.update({
+                'theme': theme,
+                'showtextwithimages': showtextwithimages,
+                'earlybuzztimeout': earlybuzztimeout,
+                'allownegative': allownegative,
+                'allownegativeinfinal': allownegativeinfinal,
+                'use_wayback_first': use_wayback_first,
+                'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
+                'auto_host': auto_host,
+            })
+            self.parent().game.auto_host.refresh_config()
+            url = self.parent().game.buzzer_controller.player_url(prefer_https=True)
+            self.parent().game.main_display.welcome_widget.set_url(url)
+        except Exception:
+            logging.exception("Failed to refresh buzzer URL after settings save")
 
         if requires_restart:
             # Restart the application

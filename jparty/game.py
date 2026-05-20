@@ -191,6 +191,16 @@ class Game(QObject):
     auto_answer_text_trigger = pyqtSignal(int, str)
     auto_dd_wager_trigger = pyqtSignal(int, int)
     auto_finalize_judgement_trigger = pyqtSignal()
+    auto_open_responses_trigger = pyqtSignal()
+    auto_back_to_board_trigger = pyqtSignal()
+    auto_open_final_trigger = pyqtSignal()
+    auto_final_open_responses_trigger = pyqtSignal()
+    auto_final_next_player_trigger = pyqtSignal()
+    auto_final_show_answer_trigger = pyqtSignal()
+    auto_final_correct_trigger = pyqtSignal()
+    auto_final_incorrect_trigger = pyqtSignal()
+    auto_start_game_trigger = pyqtSignal()
+    auto_close_game_trigger = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -343,6 +353,16 @@ class Game(QObject):
         self.auto_answer_text_trigger.connect(self.auto_host.judge_answer)
         self.auto_dd_wager_trigger.connect(self.auto_host.apply_daily_double_wager)
         self.auto_finalize_judgement_trigger.connect(self.auto_host.finalize_pending_judgement)
+        self.auto_open_responses_trigger.connect(self.open_responses)
+        self.auto_back_to_board_trigger.connect(self.back_to_board)
+        self.auto_open_final_trigger.connect(self.open_final)
+        self.auto_final_open_responses_trigger.connect(self.final_open_responses)
+        self.auto_final_next_player_trigger.connect(self.final_next_player)
+        self.auto_final_show_answer_trigger.connect(self.final_show_answer)
+        self.auto_final_correct_trigger.connect(self.final_correct_answer)
+        self.auto_final_incorrect_trigger.connect(self.final_incorrect_answer)
+        self.auto_start_game_trigger.connect(self.start_game)
+        self.auto_close_game_trigger.connect(self.close_game)
 
         # Setup video server
         def run_server():
@@ -371,6 +391,8 @@ class Game(QObject):
     def set_muted(self, value):
         self.muted = value
         self.song_player.set_muted(value)
+        if not self.muted and self.current_round is None:
+            self.song_player.play(repeat=True)
 
     def play_sound(self, file_name):
         if self.muted:
@@ -381,10 +403,13 @@ class Game(QObject):
             logging.exception(f"Failed to play sound: {file_name}")
 
     def start_game(self):
+        if self.current_round is not None:
+            return
         self.current_round = self.data.rounds[0]
         self.dc.hide_welcome_widgets()
         self.dc.board_widget.load_round(self.current_round)
         self.buzzer_controller.accepting_players = False
+        self.buzzer_controller.start_votes = set()
         self.song_player.stop()
         # Update config when game starts in case host made some settings changes
         with open(config_path, 'r') as f:
@@ -455,6 +480,8 @@ class Game(QObject):
         self.keystroke_manager.activate("OPEN_RESPONSES")
 
     def open_responses(self):
+        if self.auto_host.enabled:
+            self.auto_host.send_all_to_buzz()
         self.dc.borders.lights(True)
         time.sleep(BUZZER_DELAY)
         self.accepting_responses = True
@@ -524,7 +551,7 @@ class Game(QObject):
             self.answering_player = player
             self.keystroke_manager.activate("CORRECT_ANSWER", "INCORRECT_ANSWER")
             self.dc.borders.lights(False)
-            self.auto_host.prompt_answer(player)
+            self.auto_host.acknowledge_buzz(player)
         else:
             pass
 
@@ -582,12 +609,14 @@ class Game(QObject):
             self.dc.load_final(self.current_round.question)
             self.dc.show_player_kick_buttons()
             self.start_final()
+            self.auto_host.on_round_started()
         else:
             # Highlight player with least money to have control
             losing_player = min(self.players, key=lambda p: p.score) if self.players else None
             self.set_player_in_control(losing_player)
 
             self.dc.board_widget.load_round(self.current_round)
+            self.auto_host.on_round_started()
 
     def start_final(self):
         logging.info("start final")
@@ -649,6 +678,9 @@ class Game(QObject):
             self.host_display.question_widget.hint_label.setText(
                 "Press space to show clue!"
             )
+            if self.auto_host.enabled and isinstance(self.current_round, FinalBoard):
+                self.auto_host.on_final_wagers_complete()
+                return
             self.keystroke_manager.activate("OPEN_FINAL")
 
     def final_open_responses(self):
@@ -715,7 +747,10 @@ class Game(QObject):
         self.toolate_trigger.emit()
         self.accepting_responses = False
         self.dc.borders.flash()
-        self.keystroke_manager.activate("FINAL_NEXT_PLAYER")
+        if self.auto_host.enabled:
+            self.auto_host.judge_final_responses()
+        else:
+            self.keystroke_manager.activate("FINAL_NEXT_PLAYER")
 
     def end_game(self):
         top_score = max([p.score for p in self.players])
@@ -729,11 +764,18 @@ class Game(QObject):
             self.dc.final_window.show_tie()
 
         self.play_sound("applause.wav")
+        if self.auto_host.enabled:
+            for player in self.players:
+                player.page = "buzz"
+                player.auto_payload = {}
+                if player.waiter:
+                    player.waiter.send("PROMPT_PLAY_AGAIN")
 
         print("activate close game")
         self.keystroke_manager.activate("CLOSE_GAME")
 
     def close_game(self):
+        self.song_player.stop()
         self.buzzer_controller.restart()
         self.players = []
         self.current_round = None
@@ -775,6 +817,8 @@ class Game(QObject):
             self.play_sound("dd.wav")
             if not self.auto_host.prompt_daily_double_wager():
                 self.soliciting_player = True
+        elif self.auto_host.enabled:
+            self.auto_host.on_clue_loaded(q)
         elif q.includes_audio:
             self.keystroke_manager.activate("PLAY_AUDIO")
         else:
@@ -825,7 +869,10 @@ class Game(QObject):
         self.accepting_responses = False
         self.play_sound("stumped.wav")
         self.dc.borders.flash()
-        self.keystroke_manager.activate("BACK_TO_BOARD")
+        if self.auto_host.enabled:
+            self.auto_host.announce_stumped(self.active_question)
+        else:
+            self.keystroke_manager.activate("BACK_TO_BOARD")
 
     def __toolate(self):
         self.buzzer_controller.toolate()
@@ -850,10 +897,11 @@ class Game(QObject):
 
 
 class Player(object):
-    def __init__(self, name, buzzerColor, waiter):
+    def __init__(self, name, buzzerColor, waiter, display_name=""):
         logging.info(f"Player init received buzzerColor: {buzzerColor}")
         self.buzzercolor = buzzerColor
         self.name = name
+        self.display_name = display_name
         self.token = os.urandom(15)
         self.score = 0
         self.waiter = waiter

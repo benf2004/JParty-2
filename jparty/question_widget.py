@@ -17,7 +17,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import Qt
 
-from jparty.style import MyLabel, CARDPAL
+from jparty.style import MyLabel, CARDPAL, board_text_color
 from jparty.constants import DEFAULT_CONFIG, VIDEO_PLAY_TIME
 from jparty.utils import get_base_path
 from jparty.paths import config_path
@@ -42,6 +42,17 @@ class QuestionWidget(QWidget):
         self.question_label.setFont(QFont(QFontDatabase.applicationFontFamilies(1)))
         self.main_layout.addWidget(self.question_label)
         self.main_layout.setContentsMargins(0, 50, 0, 50)
+        self.corner_category_label = MyLabel(
+            f"{question.category} - {question.value}".upper(),
+            lambda: self.height() * 0.032,
+            self,
+        )
+        self.corner_category_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom
+        )
+        self.corner_category_label.setWordWrap(False)
+        self.corner_category_label.setStyleSheet(f"color: {board_text_color.name()}")
+        self.position_category_label()
 
         if question.video_link is not None:
             logging.info(f"Question has video, loading video: {question.video_link}")
@@ -84,6 +95,24 @@ class QuestionWidget(QWidget):
 
         self.setPalette(CARDPAL)
         self.show()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.position_category_label()
+
+    def position_category_label(self):
+        if not hasattr(self, "corner_category_label") or self.corner_category_label is None:
+            return
+        margin = max(12, int(self.width() * 0.018))
+        label_width = max(180, int(self.width() * 0.38))
+        label_height = max(28, int(self.height() * 0.07))
+        self.corner_category_label.setGeometry(
+            self.width() - label_width - margin,
+            self.height() - label_height - margin,
+            label_width,
+            label_height,
+        )
+        self.corner_category_label.raise_()
 
     def is_remote_link(self, link):
         return isinstance(link, str) and link.lower().startswith(("http://", "https://"))
@@ -340,6 +369,8 @@ class FinalJeopardyWidget(QuestionWidget):
     def __init__(self, question, parent=None):
         super().__init__(question, parent)
         self.question_label.setVisible(False)
+        if hasattr(self, "corner_category_label"):
+            self.corner_category_label.setVisible(False)
 
         self.category_label = MyLabel(
             question.category, self.startCategoryFontSize, self

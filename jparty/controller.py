@@ -1,4 +1,7 @@
 import logging
+import ssl
+import subprocess
+import tempfile
 import tornado.escape
 import tornado.ioloop
 import tornado.web
@@ -11,12 +14,14 @@ import socket
 
 from jparty.environ import root
 from jparty.game import Player
-from jparty.constants import MAXPLAYERS, PORT
+from jparty.constants import MAXPLAYERS, PORT, HTTPS_PORT
 import json
 from jparty.utils import resource_path
+from jparty.paths import user_data_dir
 
 
 define("port", default=PORT, help="run on the given port", type=int)
+define("https_port", default=HTTPS_PORT, help="run HTTPS buzzer on the given port", type=int)
 
 
 def bundled_path(*parts):
@@ -173,7 +178,7 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
         if msg == "NAME":
             buzzerColor = parsed["buzzerColor"]
             logging.info(f"received NAME: {text}")
-            self.init_player(text, buzzerColor)
+            self.init_player(text, buzzerColor, parsed.get("displayName", ""))
         elif msg == "CHECK_IF_EXISTS":
             logging.info(f"Checking if {text} exists")
             buzzerColor = None
@@ -192,11 +197,19 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
             self.application.controller.challenge_vote(self.player, text)
         elif msg == "JUDGEMENT_ACCEPT":
             self.application.controller.finalize_auto_judgement()
+        elif msg == "START_GAME_VOTE":
+            self.application.controller.start_game_vote(self.player)
+        elif msg == "PLAY_AGAIN_VOTE":
+            self.application.controller.play_again_vote(self.player)
+        elif msg == "DISPUTE_REQUEST":
+            self.application.controller.dispute_request(self.player)
+        elif msg == "DISPUTE_VOTE":
+            self.application.controller.dispute_vote(self.player, text)
 
         else:
             raise Exception("Unknown message")
 
-    def init_player(self, name, buzzerColor):
+    def init_player(self, name, buzzerColor, displayName=""):
 
         if not self.controller.accepting_players:
             logging.info("Game started!")
@@ -207,12 +220,14 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
             self.send("FULL")
             return
 
-        self.player = Player(name, buzzerColor, self)
+        self.player = Player(name, buzzerColor, self, displayName)
         self.application.controller.new_player(self.player)
         logging.info(
             f"New Player: {self.player} {self.request.remote_ip} {self.player.token.hex()}"
         )
         self.send("TOKEN", self.player.token.hex())
+        if self.application.controller.game.auto_host.enabled:
+            self.send("PROMPT_START_GAME")
 
     def buzz(self):
         self.application.controller.buzz(self.player)
@@ -237,8 +252,12 @@ class BuzzerController:
             self
         )  # this is to remove sleep mode on Macbook network card
         self.port = options.port
+        self.https_port = options.https_port
+        self.https_enabled = False
         self.connected_players = []
         self.accepting_players = True
+        self.start_votes = set()
+        self.play_again_votes = set()
 
     def start(self, threaded=True, tries=0):
         try:
@@ -249,6 +268,8 @@ class BuzzerController:
             self.port += 1
             self.start(threaded, tries+1)
             return
+
+        self.start_https()
 
         if threaded:
             self.thread = Thread(target=tornado.ioloop.IOLoop.current().start)
@@ -262,6 +283,69 @@ class BuzzerController:
             p.waiter.close()
         self.connected_players = []
         self.accepting_players = True
+
+    def start_https(self):
+        try:
+            cert_path, key_path = self.ensure_https_cert()
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_ctx.load_cert_chain(cert_path, key_path)
+            self.app.listen(self.https_port, ssl_options=ssl_ctx)
+            self.https_enabled = True
+            logging.info(f"HTTPS buzzer server listening at https://{self.localip()}:{self.https_port}")
+        except Exception:
+            self.https_enabled = False
+            logging.exception("Could not start HTTPS buzzer server")
+
+    def ensure_https_cert(self):
+        cert_path = os.path.join(user_data_dir, "jparty-local.crt")
+        key_path = os.path.join(user_data_dir, "jparty-local.key")
+        if os.path.exists(cert_path) and os.path.exists(key_path):
+            return cert_path, key_path
+
+        local_ip = self.localip()
+        with tempfile.NamedTemporaryFile("w", delete=False) as cfg:
+            cfg.write(
+                "[req]\n"
+                "distinguished_name=req_distinguished_name\n"
+                "x509_extensions=v3_req\n"
+                "prompt=no\n"
+                "[req_distinguished_name]\n"
+                "CN=JParty Local\n"
+                "[v3_req]\n"
+                f"subjectAltName=IP:{local_ip},IP:127.0.0.1,DNS:localhost\n"
+            )
+            cfg_path = cfg.name
+
+        try:
+            subprocess.run(
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-nodes",
+                    "-days",
+                    "3650",
+                    "-newkey",
+                    "rsa:2048",
+                    "-keyout",
+                    key_path,
+                    "-out",
+                    cert_path,
+                    "-config",
+                    cfg_path,
+                    "-sha256",
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        finally:
+            try:
+                os.unlink(cfg_path)
+            except OSError:
+                pass
+
+        return cert_path, key_path
 
     def buzz(self, player):
         if self.game:
@@ -305,6 +389,31 @@ class BuzzerController:
         if player is self.game.auto_host.player_in_control:
             self.game.auto_select_clue_trigger.emit(category_index, row)
 
+    def majority_count(self):
+        return (len(self.connected_players) // 2) + 1
+
+    def start_game_vote(self, player):
+        if not self.game or not self.game.auto_host.enabled or player is None:
+            return
+        self.start_votes.add(player)
+        if self.game.startable() and len(self.start_votes) >= self.majority_count():
+            self.game.auto_start_game_trigger.emit()
+
+    def play_again_vote(self, player):
+        if not self.game or not self.game.auto_host.enabled or player is None:
+            return
+        self.play_again_votes.add(player)
+        if len(self.play_again_votes) >= self.majority_count():
+            self.game.auto_close_game_trigger.emit()
+
+    def dispute_request(self, player):
+        if self.game and self.game.auto_host.enabled:
+            self.game.auto_host.request_dispute(player)
+
+    def dispute_vote(self, player, choice):
+        if self.game and self.game.auto_host.enabled:
+            self.game.auto_host.receive_dispute_vote(player, choice)
+
     def player_audio(self, player, purpose, audio_bytes, mime_type, sequence_id=None):
         if self.game and self.game.auto_host.enabled:
             self.game.auto_host.receive_audio(player, purpose, audio_bytes, mime_type, sequence_id)
@@ -333,6 +442,12 @@ class BuzzerController:
             return f"{localip}"
         else:
             return f"{localip}:{self.port}"
+
+    def player_url(self, prefer_https=False):
+        localip = BuzzerController.localip()
+        if prefer_https:
+            return f"https://{localip}:{self.https_port}"
+        return f"http://{self.host()}"
 
     def player_with_token(self, token, buzzerColor):
         for p in self.connected_players:

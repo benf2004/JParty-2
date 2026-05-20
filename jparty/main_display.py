@@ -89,7 +89,7 @@ class DisplayWindow(QMainWindow):
         return Borders(self)
 
     def create_start_menu(self):
-        return QRWidget(self.game.buzzer_controller.host(), self)
+        return QRWidget(self.game.buzzer_controller.player_url(prefer_https=True), self)
 
     def create_score_board(self):
         return ScoreBoard(self.game, self)

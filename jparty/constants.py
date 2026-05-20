@@ -3,6 +3,7 @@ QUESTIONTIME = 4
 MONIES = [[200, 400, 600, 800, 1000], [400, 800, 1200, 1600, 2000]]
 MAXPLAYERS = 8
 PORT = 8080
+HTTPS_PORT = 8443
 VIDEO_PORT = 8081
 DESIGNER_URL = "https://benf2004.github.io/JParty-2/designer_site/game/"
 VIDEO_PLAY_TIME = 10
@@ -24,6 +25,7 @@ DEFAULT_CONFIG = {
     'enabled': False,
     'ai_provider': 'openai',
     'openai_api_key': '',
+    'tts_voice': 'coral',
     'selection_mode': 'voice_with_gui_fallback',
     'answer_judging': 'auto_with_challenge',
     'leniency': 'normal',

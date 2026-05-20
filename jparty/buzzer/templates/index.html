@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       <!--signature pad-->
         <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js" type="text/javascript" ></script>
-        <script src="http://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js" type="text/javascript"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js" type="text/javascript"></script>
     <script type="text/javascript">
       // Expose individual theme color values (fall back to defaults if missing).
       window.jparty_theme = {
@@ -24,6 +24,10 @@
 
   <div class="w3-container buzz-page noselect" style="margin-top:90px">
       <button id="buzzer" class="jparty-button" onmousedown="buzz()">BUZZ!</button>
+      <button type="button" id="start-game-button" class="jparty-button auto-host-control" onclick="startGameVote()">Start Game</button>
+      <button type="button" id="play-again-button" class="jparty-button auto-host-control" onclick="playAgainVote()">Play Again</button>
+      <button type="button" id="dispute-buzz-button" class="jparty-button auto-host-control dispute-button" onclick="disputeLastClue()">Dispute Last Clue</button>
+      <div id="buzz-status" class="recording-status hints"></div>
       <div class="hints buzz-hint">
         Hint:</br> Turn off Auto-Lock and Low Power Mode so your buzzer doesn't go dark!
       </div>
@@ -32,8 +36,9 @@
   <div class="w3-container name-page noselect" style="margin-top:10px">
 
       <div class="hints name-hint">
-        Sign your name or click "keyboard" to type
+        Type your name and sign below
       </div>
+      <input type='text' name="displayname" class="text_input display_name_input" placeholder="Your name"/>
       <canvas id="name-canvas"></canvas>
 
       <div class="canvas-buttons">
@@ -61,7 +66,7 @@
   </div>
 
   <div class="w3-container wager-page" style="margin-top:90px">
-      <form onsubmit="wagerForm();" action="javascript:void(0);" class="wager_form">
+      <form onsubmit="wagerForm(this);" action="javascript:void(0);" class="wager_form">
           <input type='number' name="wager" pattern="[0-9]*" class="text_input wager_input" min="0" max="100" step="0"/>
           <button type="submit" class="jparty-button submit">Wager</button>
       </form>
@@ -78,12 +83,14 @@
   <div class="w3-container select-page auto-host-page" style="margin-top:20px">
       <div class="prompt">Pick the next clue</div>
       <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('clue_selection')">Speak Clue</button>
-      <div id="recording-status" class="hints"></div>
+      <button type="button" id="dispute-select-button" class="jparty-button auto-host-control dispute-button" onclick="disputeLastClue()">Dispute Last Clue</button>
+      <div id="recording-status" class="recording-status hints"></div>
       <div id="clue-grid" class="clue-grid"></div>
   </div>
 
   <div class="w3-container record_answer-page auto-host-page" style="margin-top:90px">
-      <div class="prompt">Record your answer</div>
+      <div id="answer-record-prompt" class="prompt">Record your answer</div>
+      <div id="answer-record-status" class="recording-status hints"></div>
       <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('answer')">Record Answer</button>
       <form onsubmit="answerForm();" action="javascript:void(0);" class="answer_form fallback-form">
           <input type='text' name="answer" class="answer_input text_input" placeholder="Type answer"/>
@@ -94,7 +101,8 @@
   <div class="w3-container dd_wager-page auto-host-page" style="margin-top:90px">
       <div class="prompt">Daily Double Wager</div>
       <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('daily_double_wager')">Speak Wager</button>
-      <form onsubmit="wagerForm();" action="javascript:void(0);" class="wager_form fallback-form">
+      <div id="dd-wager-status" class="recording-status hints"></div>
+      <form onsubmit="wagerForm(this);" action="javascript:void(0);" class="wager_form fallback-form">
           <input type='number' name="wager" pattern="[0-9]*" class="text_input wager_input" min="0" max="100" step="0"/>
           <button type="submit" class="jparty-button submit">Submit Wager</button>
       </form>
@@ -103,14 +111,18 @@
   <div class="w3-container judgement-page auto-host-page" style="margin-top:90px">
       <div id="judgement-text" class="prompt"></div>
       <div id="judgement-reason" class="hints"></div>
-      <button type="button" class="jparty-button submit" onclick="acceptJudgement()">Accept</button>
-      <button type="button" class="jparty-button submit" onclick="requestChallenge()">Challenge</button>
   </div>
 
   <div class="w3-container challenge-page auto-host-page" style="margin-top:90px">
       <div id="challenge-text" class="prompt">Vote on the challenged answer</div>
       <button type="button" class="jparty-button submit" onclick="challengeVote('correct')">Correct</button>
       <button type="button" class="jparty-button submit" onclick="challengeVote('incorrect')">Incorrect</button>
+  </div>
+
+  <div class="w3-container dispute-page auto-host-page" style="margin-top:40px">
+      <div id="dispute-text" class="prompt">Vote on the last clue</div>
+      <div id="dispute-options"></div>
+      <div id="dispute-status" class="recording-status hints"></div>
   </div>
 
   </body>

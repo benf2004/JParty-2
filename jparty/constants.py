@@ -4,6 +4,7 @@ MONIES = [[200, 400, 600, 800, 1000], [400, 800, 1200, 1600, 2000]]
 MAXPLAYERS = 8
 PORT = 8080
 VIDEO_PORT = 8081
+DESIGNER_URL = f"http://127.0.0.1:{PORT}/designer/"
 VIDEO_PLAY_TIME = 10
 BEFORE_REVEAL_WAIT_TIME = 1
 CATEGORY_REVEAL_TIME = 2
@@ -15,5 +16,6 @@ DEFAULT_CONFIG = {
   'earlybuzztimeout': 500,
   'allownegative': 'True',
   'allownegativeinfinal': 'True',
-  'use_wayback_first': True
+  'use_wayback_first': True,
+  'mute_sound': False,
 }

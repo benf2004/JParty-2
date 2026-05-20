@@ -21,9 +21,12 @@ define("port", default=PORT, help="run on the given port", type=int)
 
 class Application(tornado.web.Application):
     def __init__(self, controller):
+        designer_path = os.path.join(root, "designer_site", "game")
         handlers = [
             (r"/", WelcomeHandler),
             (r"/play", BuzzerHandler),
+            (r"/designer", DesignerHandler),
+            (r"/designer/(.*)", tornado.web.StaticFileHandler, {"path": designer_path, "default_filename": "index.html"}),
             (r"/buzzersocket", BuzzerSocketHandler),
         ]
         settings = dict(
@@ -67,6 +70,11 @@ class BuzzerHandler(tornado.web.RequestHandler):
         theme_colors = theme.get('colors', theme)
         theme_json = json.dumps(theme_colors)
         self.render("play.html", messages=BuzzerSocketHandler.cache, theme=theme_colors, theme_json=theme_json)
+
+
+class DesignerHandler(tornado.web.RequestHandler):
+    def get(self):
+        self.redirect("/designer/")
 
 
 class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):

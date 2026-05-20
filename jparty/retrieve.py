@@ -1,8 +1,11 @@
 import requests
 from bs4 import BeautifulSoup
 from html import unescape
+import os
 import re
 import json
+import zipfile
+import tempfile
 from jparty.game import Question, Board, FinalBoard, GameData
 import logging
 import csv
@@ -33,7 +36,7 @@ def list_to_game(s):
                 image_link = process_values['image_link']
                 video_link = process_values['video_link']
 
-                questions.append(Question(index, text, answer, cat, image_link, video_link, False, None, value, dd))
+                questions.append(Question(index, text, answer, cat, image_link, video_link, None, False, None, value, dd))
 
         boards.append(Board(categories, questions, dj=(n1 == 14)))
 
@@ -50,7 +53,7 @@ def list_to_game(s):
 
     answer = fj[3]
     category = fj[1]
-    question = Question(index, text, answer, category, image_link, video_link, False)
+    question = Question(index, text, answer, category, image_link, video_link, None, False, None, -1, False)
     boards.append(FinalBoard(category, question))
     date = fj[5]
     comments = fj[7]
@@ -162,7 +165,7 @@ def get_JArchive_Game(game_id, wayback_url=None):
             value = MONIES[i][index[1]]
             answer = findanswer(clue)
             questions.append(
-                Question(index, text, answer, categories[index[0]], image_link, None, False, None, value, dd)
+                Question(index, text, answer, categories[index[0]], image_link, None, None, False, None, value, dd)
             )
         boards.append(Board(categories, questions, dj=(i == 1)))
 
@@ -178,7 +181,7 @@ def get_JArchive_Game(game_id, wayback_url=None):
 
     text = text_obj.text
     answer = findanswer(final_round_obj)
-    question = Question((0, 0), text, answer, category)
+    question = Question((0, 0), text, answer, category, None, None, None, False, None, -1, False)
 
     boards.append(FinalBoard(category, question))
 
@@ -215,6 +218,94 @@ def get_game_sum(soup):
     comments = soup.select("#game_comments")[0].contents
 
     return date, comments
+
+
+_extracted_game_dirs = []
+
+def _resolve_media_link(link, base_path=None):
+    if not link:
+        return None
+
+    if isinstance(link, str):
+        link = link.strip()
+        if link.startswith("http://") or link.startswith("https://"):
+            return link
+        if os.path.isabs(link):
+            return link
+        if base_path:
+            return os.path.join(base_path, link)
+    return link
+
+
+def game_from_dict(data, base_path=None):
+    rounds = []
+    for round_dict in data.get("rounds", []):
+        round_type = (round_dict.get("type") or "").lower().replace(" ", "")
+        if round_type == "final":
+            question_dict = round_dict.get("question", {})
+            question = Question(
+                tuple(question_dict.get("index", [0, 0])),
+                question_dict.get("text", ""),
+                question_dict.get("answer", ""),
+                question_dict.get("category", "Final Jeopardy"),
+                _resolve_media_link(question_dict.get("image_link"), base_path),
+                _resolve_media_link(question_dict.get("video_link"), base_path),
+                _resolve_media_link(question_dict.get("audio_link"), base_path),
+                bool(question_dict.get("includes_audio", False) or question_dict.get("audio_link")),
+                None,
+                int(question_dict.get("value", -1)),
+                False,
+            )
+            rounds.append(FinalBoard(question.category, question))
+        else:
+            categories = round_dict.get("categories", [])
+            questions = []
+            for question_dict in round_dict.get("questions", []):
+                index = tuple(question_dict.get("index", [0, 0]))
+                q = Question(
+                    index,
+                    question_dict.get("text", ""),
+                    question_dict.get("answer", ""),
+                    question_dict.get("category", categories[index[0]] if index[0] < len(categories) else ""),
+                    _resolve_media_link(question_dict.get("image_link"), base_path),
+                    _resolve_media_link(question_dict.get("video_link"), base_path),
+                    _resolve_media_link(question_dict.get("audio_link"), base_path),
+                    bool(question_dict.get("includes_audio", False) or question_dict.get("audio_link")),
+                    None,
+                    int(question_dict.get("value", -1)),
+                    bool(question_dict.get("dd", False)),
+                )
+                questions.append(q)
+            rounds.append(Board(categories, questions, dj=(round_type in ["doublejeopardy", "double", "dj"])))
+    return GameData(rounds, data.get("date", ""), data.get("comments", ""))
+
+
+def get_game_from_file(path):
+    if path.lower().endswith('.json'):
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return game_from_dict(data, base_path=os.path.dirname(os.path.abspath(path)))
+
+    if path.lower().endswith('.zip'):
+        temp_dir = tempfile.mkdtemp(prefix='jparty_game_')
+        _extracted_game_dirs.append(temp_dir)
+        with zipfile.ZipFile(path, 'r') as archive:
+            archive.extractall(temp_dir)
+            candidate = None
+            if 'game.json' in archive.namelist():
+                candidate = os.path.join(temp_dir, 'game.json')
+            else:
+                for name in archive.namelist():
+                    if name.lower().endswith('.json'):
+                        candidate = os.path.join(temp_dir, name)
+                        break
+            if candidate is None or not os.path.exists(candidate):
+                raise ValueError('ZIP archive does not contain a game.json file')
+            with open(candidate, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        return game_from_dict(data, base_path=temp_dir)
+
+    raise ValueError('Unsupported game file type')
 
 
 def get_random_game():

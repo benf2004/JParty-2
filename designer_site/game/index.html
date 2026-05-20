@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JParty Game Designer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="designer.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo-block">
+        <span class="logo-j">J!</span>
+        <div class="logo-text">
+          <div class="logo-title">JParty Designer</div>
+          <div class="logo-sub">Custom Game Builder</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="action-btn action-primary" id="download-zip">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export ZIP
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-main">
+
+    <!-- Meta strip -->
+    <section class="meta-strip">
+      <div class="meta-field">
+        <label class="meta-label" for="game-title">Game Title</label>
+        <input class="meta-input" id="game-title" placeholder="My Custom JParty Game" />
+      </div>
+      <div class="meta-field meta-field--sm">
+        <label class="meta-label" for="game-date">Date</label>
+        <input class="meta-input" id="game-date" type="date" />
+      </div>
+      <div class="meta-field">
+        <label class="meta-label" for="game-comments">Notes</label>
+        <input class="meta-input" id="game-comments" placeholder="Optional notes or description" />
+      </div>
+      <div class="meta-autosave" id="autosave-indicator">
+        <span class="autosave-dot"></span>
+        <span class="autosave-text">Saved</span>
+      </div>
+    </section>
+
+    <!-- Round tabs -->
+    <section class="round-tabs">
+      <button class="round-tab active" data-round="jeopardy">
+        <span class="tab-label">Jeopardy</span>
+        <span class="tab-badge" id="badge-jeopardy">0/30</span>
+      </button>
+      <button class="round-tab" data-round="double">
+        <span class="tab-label">Double Jeopardy</span>
+        <span class="tab-badge" id="badge-double">0/30</span>
+      </button>
+      <button class="round-tab" data-round="final">
+        <span class="tab-label">Final Jeopardy</span>
+        <span class="tab-badge" id="badge-final">0/1</span>
+      </button>
+    </section>
+
+    <!-- Progress bar -->
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
+
+    <!-- Main editor layout -->
+    <div class="editor-layout" id="designer-body"></div>
+
+  </main>
+
+  <div class="media-modal" id="media-modal" aria-hidden="true">
+    <div class="media-modal-backdrop" data-media-modal-close></div>
+    <div class="media-modal-panel" role="dialog" aria-modal="true" aria-labelledby="media-modal-title">
+      <div class="media-modal-header">
+        <div>
+          <div class="media-modal-kicker" id="media-modal-kicker">Media</div>
+          <div class="media-modal-title" id="media-modal-title">Preview</div>
+        </div>
+        <button type="button" class="media-modal-close" data-media-modal-close aria-label="Close media preview">×</button>
+      </div>
+      <div class="media-modal-body" id="media-modal-body"></div>
+    </div>
+  </div>
+
+  <script src="designer.js"></script>
+</body>
+</html>

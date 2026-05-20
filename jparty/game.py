@@ -15,9 +15,11 @@ import requests
 import datetime
 import http.server
 import socketserver
+from functools import partial
 
 from jparty.utils import SongPlayer, resource_path, CompoundObject
 from jparty.constants import FJTIME, QUESTIONTIME, VIDEO_PORT
+from jparty.environ import root
 from jparty.stats import StatsBox
 from jparty.paths import config_path
 
@@ -130,6 +132,7 @@ class Question:
     category: str
     image_link: str = None
     video_link: str = None
+    audio_link: str = None
     includes_audio: bool = False
     image_content: str = None
     value: int = -1
@@ -243,6 +246,9 @@ class Game(QObject):
         self.__judgement_round = 0
         self.__sorted_players = None
 
+        self.muted = self.config.get('mute_sound', False)
+        self.song_player.set_muted(self.muted)
+
         self.buzzer_controller = None
 
         self.keystroke_manager = KeystrokeManager()
@@ -330,12 +336,16 @@ class Game(QObject):
 
         # Setup video server
         def run_server():
-            with socketserver.TCPServer(("", VIDEO_PORT), http.server.SimpleHTTPRequestHandler) as httpd:
-                print("Serving videos at port", VIDEO_PORT)
+            video_dir = os.path.join(root, "jparty")
+            if not os.path.exists(os.path.join(video_dir, "video.html")):
+                video_dir = root
+            handler = partial(http.server.SimpleHTTPRequestHandler, directory=video_dir)
+            with socketserver.TCPServer(("", VIDEO_PORT), handler) as httpd:
+                print("Serving videos at port", VIDEO_PORT, "from", video_dir)
                 httpd.serve_forever()
 
         # Create a new thread and start the server
-        server_thread = threading.Thread(target=run_server)
+        server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
 
     def show_stats(self):
@@ -347,6 +357,18 @@ class Game(QObject):
 
     def begin(self):
         self.song_player.play(repeat=True)
+
+    def set_muted(self, value):
+        self.muted = value
+        self.song_player.set_muted(value)
+
+    def play_sound(self, file_name):
+        if self.muted:
+            return
+        try:
+            sa.WaveObject.from_wave_file(resource_path(file_name)).play()
+        except Exception:
+            logging.exception(f"Failed to play sound: {file_name}")
 
     def start_game(self):
         self.current_round = self.data.rounds[0]
@@ -571,8 +593,12 @@ class Game(QObject):
     def load_image(self, question):
         try:
             logging.info(f"pre-loading image: {question.image_link}")
-            request = requests.get(question.image_link, timeout=1)
-            question.image_content = request.content
+            if isinstance(question.image_link, str) and question.image_link.lower().startswith(("http://", "https://")):
+                request = requests.get(question.image_link, timeout=1)
+                question.image_content = request.content
+            else:
+                with open(question.image_link, "rb") as image_file:
+                    question.image_content = image_file.read()
             logging.info(f"loaded image: {question.image_link}")
 
         except requests.Timeout:
@@ -582,6 +608,8 @@ class Game(QObject):
             question.image_content = b"Not Found"
         except requests.exceptions.RequestException as e:
             logging.info(f"failed to load image: {question.image_link}")
+        except OSError:
+            logging.info(f"failed to load local image: {question.image_link}", exc_info=True)
 
     def wager(self, i_player, amount):
         player = self.players[i_player]
@@ -678,8 +706,7 @@ class Game(QObject):
         else:
             self.dc.final_window.show_tie()
 
-        wo = sa.WaveObject.from_wave_file(resource_path("applause.wav"))
-        wo.play()
+        self.play_sound("applause.wav")
 
         print("activate close game")
         self.keystroke_manager.activate("CLOSE_GAME")
@@ -723,8 +750,7 @@ class Game(QObject):
         self.dc.remove_card(q)
         if q.dd:
             logging.info("Daily double!")
-            wo = sa.WaveObject.from_wave_file(resource_path("dd.wav"))
-            wo.play()
+            self.play_sound("dd.wav")
             self.soliciting_player = True
         elif q.includes_audio:
             self.keystroke_manager.activate("PLAY_AUDIO")
@@ -733,8 +759,7 @@ class Game(QObject):
 
     def open_final(self):
         self.dc.question_widget.show_question()
-        wo = sa.WaveObject.from_wave_file(resource_path("ding.wav"))
-        wo.play()
+        self.play_sound("ding.wav")
         self.keystroke_manager.activate("FINAL_OPEN_RESPONSES")
 
     def correct_answer(self):
@@ -775,7 +800,7 @@ class Game(QObject):
 
     def stumped(self):
         self.accepting_responses = False
-        sa.WaveObject.from_wave_file(resource_path("stumped.wav")).play()
+        self.play_sound("stumped.wav")
         self.dc.borders.flash()
         self.keystroke_manager.activate("BACK_TO_BOARD")
 

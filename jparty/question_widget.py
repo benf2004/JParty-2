@@ -24,6 +24,7 @@ from jparty.paths import config_path
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
+from html import escape
 
 class QuestionWidget(QWidget):
     def __init__(self, question, parent=None):
@@ -46,43 +47,134 @@ class QuestionWidget(QWidget):
             logging.info(f"Question has video, loading video: {question.video_link}")
             self.load_video(parent, question)
 
-        elif question.image_link is not None:
-            logging.info(f"Question has image: {question.image_link}")
-            if question.image_content is None:
-                try:
-                    request = requests.get(question.image_link, timeout=1)
-                    question.image_content = request.content
-                    logging.info(f"Loaded image: {question.image_link}")
-                except requests.exceptions.RequestException as e:
-                    logging.info(f"Failed to load image: {question.image_link}")
-            
-            logging.info(f"Question has image content: {question.image_content}")
-            if question.image_content is not None and b"html" in question.image_content.lower():
-                question.image_content = None
-
-            disable_images = self.config.get('showtextwithimages', DEFAULT_CONFIG['showtextwithimages']) == 'Only show text'
-
-            if not disable_images and question.image_content is not None and b"Not Found" not in question.image_content:
-                self.image = QPixmap()
-                self.image.loadFromData(question.image_content)
+        else:
+            if question.image_link is not None:
+                logging.info(f"Question has image: {question.image_link}")
+                if question.image_content is None:
+                    self.load_image_content(question)
                 
-                if self.config.get('showtextwithimages', DEFAULT_CONFIG['showtextwithimages']) == 'Show both':
-                    # Show both text and image
-                    self.image = self.image.scaledToHeight(self.height() * 12)
+                logging.info(f"Question has image content: {question.image_content}")
+                if question.image_content is not None and b"html" in question.image_content.lower():
+                    question.image_content = None
 
-                    # Create a QLabel for the image
-                    self.image_label = MyLabel("", self.startFontSize, self)
-                    self.image_label.setPixmap(self.image)
-                    self.main_layout.addWidget(self.image_label)
-                elif self.config.get('showtextwithimages', DEFAULT_CONFIG['showtextwithimages']) == 'Only show image':
-                    # Show image only
-                    self.image = self.image.scaledToWidth(self.width() * 12)
-                    self.question_label.setPixmap(self.image)
+                disable_images = self.config.get('showtextwithimages', DEFAULT_CONFIG['showtextwithimages']) == 'Only show text'
+
+                if not disable_images and question.image_content is not None and b"Not Found" not in question.image_content:
+                    self.image = QPixmap()
+                    self.image.loadFromData(question.image_content)
+                    
+                    if self.config.get('showtextwithimages', DEFAULT_CONFIG['showtextwithimages']) == 'Show both':
+                        # Show both text and image
+                        self.image = self.image.scaledToHeight(self.height() * 12)
+
+                        # Create a QLabel for the image
+                        self.image_label = MyLabel("", self.startFontSize, self)
+                        self.image_label.setPixmap(self.image)
+                        self.main_layout.addWidget(self.image_label)
+                    elif self.config.get('showtextwithimages', DEFAULT_CONFIG['showtextwithimages']) == 'Only show image':
+                        # Show image only
+                        self.image = self.image.scaledToWidth(self.width() * 12)
+                        self.question_label.setPixmap(self.image)
+
+            if question.audio_link is not None and parent and hasattr(parent, "host") and parent.host():
+                logging.info(f"Question has audio, loading audio: {question.audio_link}")
+                self.load_audio(parent, question)
 
         self.setLayout(self.main_layout)
 
         self.setPalette(CARDPAL)
         self.show()
+
+    def is_remote_link(self, link):
+        return isinstance(link, str) and link.lower().startswith(("http://", "https://"))
+
+    def load_image_content(self, question):
+        try:
+            if self.is_remote_link(question.image_link):
+                request = requests.get(question.image_link, timeout=1)
+                question.image_content = request.content
+            else:
+                with open(question.image_link, "rb") as image_file:
+                    question.image_content = image_file.read()
+            logging.info(f"Loaded image: {question.image_link}")
+        except (OSError, requests.exceptions.RequestException):
+            logging.info(f"Failed to load image: {question.image_link}", exc_info=True)
+
+    def local_or_remote_media_url(self, link):
+        if self.is_remote_link(link):
+            return link
+        return QUrl.fromLocalFile(os.path.abspath(link)).toString()
+
+    def load_direct_media(self, parent, question, link, media_type, audio_only=False):
+        try:
+            self.web_view = QWebEngineView()
+            media_url = self.local_or_remote_media_url(link)
+            if media_type == "audio":
+                media_element = f'<audio id="local-media" src="{escape(media_url)}" controls></audio>'
+            else:
+                media_element = f'<video id="local-media" src="{escape(media_url)}" controls autoplay muted></video>'
+
+            html = f"""
+            <!doctype html>
+            <html>
+              <head>
+                <style>
+                  html, body {{
+                    width: 100%;
+                    height: 100%;
+                    margin: 0;
+                    overflow: hidden;
+                    background: #000;
+                  }}
+                  body {{
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                  }}
+                  video, audio {{
+                    width: 100%;
+                    max-height: 100%;
+                  }}
+                </style>
+              </head>
+              <body>
+                {media_element}
+                <script>
+                  function startVideo() {{
+                    const media = document.getElementById("local-media");
+                    if (media) {{
+                      media.muted = false;
+                      media.play();
+                    }}
+                  }}
+                </script>
+              </body>
+            </html>
+            """
+            self.web_view.setHtml(html, QUrl.fromLocalFile(os.path.dirname(os.path.abspath(link)) if not self.is_remote_link(link) else os.getcwd()))
+            self.web_view.page().settings().setAttribute(
+                QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True
+            )
+            self.web_view.page().settings().setAttribute(
+                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False
+            )
+
+            is_host = bool(parent and hasattr(parent, "host") and parent.host())
+            if audio_only or is_host:
+                self.web_view.setFixedHeight(self.height() * 5)
+                self.web_view.setFixedWidth(self.width() * 3)
+            else:
+                self.web_view.setFixedHeight(self.height() * 12)
+                self.web_view.setFixedWidth(self.width() * 7)
+
+            self.main_layout.addSpacing(self.main_layout.contentsMargins().top())
+            self.main_layout.addWidget(self.web_view, alignment=Qt.AlignmentFlag.AlignCenter)
+        except Exception:
+            logging.info(f"Failed to load direct {media_type}: {link}", exc_info=True)
+
+    def load_audio(self, parent, question):
+        question.includes_audio = True
+        self.load_direct_media(parent, question, question.audio_link, "audio", audio_only=True)
 
     def load_video(self, parent, question):
         try:
@@ -128,7 +220,8 @@ class QuestionWidget(QWidget):
                 video_url = "&".join(parts)
 
             if video_url:
-                if not audio_only or (audio_only and parent.host()):
+                is_host = bool(parent and hasattr(parent, "host") and parent.host())
+                if not audio_only or (audio_only and is_host):
                     # Embed youtube clip video
                     self.web_view = QWebEngineView()
                     url = f"http://localhost:8081/{video_url}"
@@ -141,7 +234,7 @@ class QuestionWidget(QWidget):
                         QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False
                     )
 
-                    if audio_only or parent.host():
+                    if audio_only or is_host:
                         self.web_view.setFixedHeight(self.height() * 5)
                         self.web_view.setFixedWidth(self.width() * 3)
                     else:
@@ -158,6 +251,8 @@ class QuestionWidget(QWidget):
 
                         thread = threading.Thread(target=end_video, args=(self.main_layout, self.web_view, video_length,))
                         thread.start()
+            else:
+                self.load_direct_media(parent, question, question.video_link, "video")
         except Exception as e:
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]

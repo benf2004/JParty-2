@@ -53,14 +53,22 @@ def resource_path(relative_path):
 class SongPlayer(object):
     def __init__(self):
         super().__init__()
+        self.__muted = False
         self.__wave_obj = sa.WaveObject.from_wave_file(resource_path("intro.wav"))
         self.__final = sa.WaveObject.from_wave_file(resource_path("final.wav"))
         self.__play_obj = None
         self.__repeating = False
         self.__repeat_thread = None
 
+    def set_muted(self, muted):
+        self.__muted = bool(muted)
+        if self.__muted:
+            self.stop()
+
     def play(self, repeat=False):
         self.__repeating = repeat
+        if self.__muted:
+            return
         self.__play_obj = self.__wave_obj.play()
         if repeat:
             self.__repeat_thread = Thread(target=self.__repeat)
@@ -68,6 +76,8 @@ class SongPlayer(object):
 
     def final(self, repeat=False):
         self.__repeating = repeat
+        if self.__muted:
+            return
         self.__play_obj = self.__final.play()
         if repeat:
             self.__repeat_thread = Thread(target=self.__repeat)
@@ -75,7 +85,8 @@ class SongPlayer(object):
 
     def stop(self):
         self.__repeating = False
-        self.__play_obj.stop()
+        if self.__play_obj is not None:
+            self.__play_obj.stop()
 
     def __repeat(self):
         while True:

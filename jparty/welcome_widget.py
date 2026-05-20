@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QComboBox,
     QPushButton,
+    QFileDialog,
 )
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 
@@ -29,13 +30,14 @@ import logging
 import json
 import os
 import sys
+import webbrowser
 
 from jparty.version import version
-from jparty.retrieve import get_game, get_random_game
+from jparty.retrieve import get_game, get_random_game, get_game_from_file
 from jparty.utils import resource_path, add_shadow, DynamicLabel, DynamicButton
 from jparty.helpmsg import helpmsg
 from jparty.style import WINDOWPAL
-from jparty.constants import DEFAULT_CONFIG
+from jparty.constants import DEFAULT_CONFIG, DESIGNER_URL
 from jparty.paths import config_path, history_path
 
 
@@ -174,6 +176,19 @@ class Welcome(StartWidget):
         self.settings_button = DynamicButton("Settings", self)
         self.settings_button.clicked.connect(self.show_settings)
 
+        self.load_button = DynamicButton("Load game file", self)
+        self.load_button.clicked.connect(self.load_game_file)
+
+        self.designer_button = DynamicButton("Open designer", self)
+        self.designer_button.clicked.connect(self.open_designer)
+
+        action_layout = QHBoxLayout()
+        action_layout.addStretch(5)
+        action_layout.addWidget(self.load_button, 3)
+        action_layout.addStretch(1)
+        action_layout.addWidget(self.designer_button, 3)
+        action_layout.addStretch(5)
+
         footer_layout = QHBoxLayout()
         footer_layout.addStretch(5)
         footer_layout.addWidget(self.quit_button, 3)
@@ -191,6 +206,7 @@ class Welcome(StartWidget):
         main_layout.addLayout(select_layout, 5)
         main_layout.addStretch(1)
         main_layout.addWidget(self.summary_label, 5)
+        main_layout.addLayout(action_layout, 2)
         main_layout.addLayout(footer_layout, 3)
         main_layout.addStretch(3)
 
@@ -216,6 +232,31 @@ class Welcome(StartWidget):
         logging.info("Showing settings")
         settings_menu = SettingsMenu(self)
         settings_menu.exec()
+
+    def open_designer(self):
+        logging.info("Opening game designer in external browser")
+        webbrowser.open_new_tab(DESIGNER_URL)
+
+    def load_game_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load custom game file",
+            os.path.expanduser("~"),
+            "Game files (*.json *.zip);;All files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            self.game.data = get_game_from_file(file_path)
+            if self.game.valid_game():
+                self.summary_trigger.emit(self.game.data.date + "\n" + self.game.data.comments)
+                self.check_start()
+            else:
+                QMessageBox.warning(self, "Invalid game", "The selected file does not contain a valid game.")
+        except Exception as exc:
+            logging.exception("Failed to load custom game file")
+            QMessageBox.warning(self, "Load failed", f"Could not load game file:\n{exc}")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

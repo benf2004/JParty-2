@@ -127,8 +127,7 @@ class Welcome(StartWidget):
 
         select_layout = QHBoxLayout()
 
-        template_url = "https://docs.google.com/spreadsheets/d/1_vBBsWn-EVc7npamLnOKHs34Mc2iAmd9hOGSzxHQX0Y/edit#gid=0"
-        gameid_text = f'Game ID (from J-Archive URL)<br>or <a href="{template_url}">GSheet ID for custom game</a>'
+        gameid_text = f'Game ID (from J-Archive URL)<br>or <a href="{DESIGNER_URL}">Custom Game ZIP</a>'
         self.gameid_label = DynamicLabel(gameid_text, lambda: self.height() * 0.1, self)
         self.gameid_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -148,9 +147,14 @@ class Welcome(StartWidget):
         self.rand_button = DynamicButton("Random", self)
         self.rand_button.clicked.connect(self.random)
 
-        button_layout.addWidget(self.start_button, 10)
+        self.load_button = DynamicButton("Load custom game", self)
+        self.load_button.clicked.connect(self.load_game_file)
+
+        button_layout.addWidget(self.start_button, 12)
         button_layout.addStretch(1)
-        button_layout.addWidget(self.rand_button, 10)
+        button_layout.addWidget(self.rand_button, 12)
+        button_layout.addStretch(1)
+        button_layout.addWidget(self.load_button, 12)
 
         select_layout.addStretch(5)
         select_layout.addWidget(self.gameid_label, 40)
@@ -180,19 +184,6 @@ class Welcome(StartWidget):
         self.mute_button.clicked.connect(self.toggle_mute)
         self.update_mute_button()
 
-        self.load_button = DynamicButton("Load game file", self)
-        self.load_button.clicked.connect(self.load_game_file)
-
-        self.designer_button = DynamicButton("Open designer", self)
-        self.designer_button.clicked.connect(self.open_designer)
-
-        action_layout = QHBoxLayout()
-        action_layout.addStretch(5)
-        action_layout.addWidget(self.load_button, 3)
-        action_layout.addStretch(1)
-        action_layout.addWidget(self.designer_button, 3)
-        action_layout.addStretch(5)
-
         footer_layout = QHBoxLayout()
         footer_layout.addStretch(5)
         footer_layout.addWidget(self.quit_button, 3)
@@ -212,7 +203,6 @@ class Welcome(StartWidget):
         main_layout.addLayout(select_layout, 5)
         main_layout.addStretch(1)
         main_layout.addWidget(self.summary_label, 5)
-        main_layout.addLayout(action_layout, 2)
         main_layout.addLayout(footer_layout, 3)
         main_layout.addStretch(3)
 
@@ -283,10 +273,10 @@ class Welcome(StartWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
 
-        textbox_height = int(self.gameid_label.height() * 0.8)
+        textbox_height = int(self.gameid_label.height() * 0.95)
         self.textbox.setMinimumSize(QSize(0, textbox_height))
         f = self.textbox.font()
-        f.setPixelSize(int(textbox_height * 0.9))
+        f.setPixelSize(int(textbox_height * 0.8))
         self.textbox.setFont(f)
 
     def __random(self):

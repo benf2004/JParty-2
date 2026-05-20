@@ -18,7 +18,7 @@ import socketserver
 from functools import partial
 
 from jparty.utils import SongPlayer, resource_path, CompoundObject
-from jparty.constants import FJTIME, QUESTIONTIME, VIDEO_PORT
+from jparty.constants import FJTIME, QUESTIONTIME, VIDEO_PORT, BUZZER_DELAY
 from jparty.environ import root
 from jparty.stats import StatsBox
 from jparty.paths import config_path
@@ -442,6 +442,7 @@ class Game(QObject):
 
     def open_responses(self):
         self.dc.borders.lights(True)
+        time.sleep(BUZZER_DELAY)
         self.accepting_responses = True
         self.accepting_responses_time = datetime.datetime.now()
 
@@ -549,6 +550,9 @@ class Game(QObject):
     def next_round(self):
         logging.info("next round")
         i = self.data.rounds.index(self.current_round)
+        if i + 1 >= len(self.data.rounds):
+            logging.warning("next_round called at the end of the game data")
+            return
         self.current_round = self.data.rounds[i + 1]
 
         # Start preloading images in a separate thread
@@ -562,7 +566,7 @@ class Game(QObject):
             self.start_final()
         else:
             # Highlight player with least money to have control
-            losing_player = min(self.players, key=lambda p: p.score)
+            losing_player = min(self.players, key=lambda p: p.score) if self.players else None
             self.set_player_in_control(losing_player)
 
             self.dc.board_widget.load_round(self.current_round)

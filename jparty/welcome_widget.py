@@ -176,6 +176,10 @@ class Welcome(StartWidget):
         self.settings_button = DynamicButton("Settings", self)
         self.settings_button.clicked.connect(self.show_settings)
 
+        self.mute_button = DynamicButton("", self)
+        self.mute_button.clicked.connect(self.toggle_mute)
+        self.update_mute_button()
+
         self.load_button = DynamicButton("Load game file", self)
         self.load_button.clicked.connect(self.load_game_file)
 
@@ -196,6 +200,8 @@ class Welcome(StartWidget):
         footer_layout.addWidget(self.help_button, 3)
         footer_layout.addStretch(1)
         footer_layout.addWidget(self.settings_button, 3)
+        footer_layout.addStretch(1)
+        footer_layout.addWidget(self.mute_button, 3)
         footer_layout.addStretch(5)
 
         main_layout.addStretch(3)
@@ -227,6 +233,22 @@ class Welcome(StartWidget):
             self,
         )
         msgbox.exec()
+
+    def update_mute_button(self):
+        self.mute_button.setText("Unmute music" if self.game.muted else "Mute music")
+
+    def toggle_mute(self):
+        muted = not self.game.muted
+        self.game.set_muted(muted)
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
+        config['mute_sound'] = muted
+        with open(config_path, 'w') as f:
+            json.dump(config, f)
+        self.update_mute_button()
 
     def show_settings(self):
         logging.info("Showing settings")
@@ -665,7 +687,8 @@ class SettingsMenu(QDialog):
                 'earlybuzztimeout': earlybuzztimeout,
                 'allownegative': allownegative,
                 'allownegativeinfinal': allownegativeinfinal,
-                'use_wayback_first': use_wayback_first
+                'use_wayback_first': use_wayback_first,
+                'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
             }, f)
 
         if requires_restart:

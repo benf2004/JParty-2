@@ -1,11 +1,10 @@
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QWidget, QGridLayout
 from PyQt6.QtGui import (
     QFont,
     QFontDatabase,
     QPalette
 )
-import time
-import threading
 import random
 import simpleaudio as sa
 
@@ -144,7 +143,10 @@ class BoardWidget(QWidget):
     def load_round(self, round):
         gl = self.grid_layout
 
-        sa.WaveObject.from_wave_file(resource_path("board_fill.wav")).play()
+        try:
+            sa.WaveObject.from_wave_file(resource_path("board_fill.wav")).play()
+        except Exception:
+            pass
 
         category_delay = BEFORE_REVEAL_WAIT_TIME + 8 * QUESTION_REVEAL_TIME
 
@@ -153,23 +155,29 @@ class BoardWidget(QWidget):
                 if y == 0:
                     # Categories
                     gl.itemAtPosition(y, x).widget().setText("")
-                    threading.Thread(target=self.set_category, args=(x, y, round.categories[x], category_delay + x * CATEGORY_REVEAL_TIME)).start()
+                    category = round.categories[x] if x < len(round.categories) else ""
+                    QTimer.singleShot(
+                        int((category_delay + x * CATEGORY_REVEAL_TIME) * 1000),
+                        lambda x=x, y=y, category=category: self.set_category(x, y, category),
+                    )
                 else:
                     # Questions
                     q = round.get_question(x, y - 1)
                     gl.itemAtPosition(y, x).widget().question = None
-                    threading.Thread(target=self.set_question, args=(x, y, q, random.randint(0, 5) * QUESTION_REVEAL_TIME + BEFORE_REVEAL_WAIT_TIME)).start()
+                    delay = random.randint(0, 5) * QUESTION_REVEAL_TIME + BEFORE_REVEAL_WAIT_TIME
+                    QTimer.singleShot(
+                        int(delay * 1000),
+                        lambda x=x, y=y, q=q: self.set_question(x, y, q),
+                    )
 
     def resizeEvent(self, event):
         self.grid_layout.setSpacing(self.width() // 150)
 
-    def set_category(self, x, y, text, delay):
-        time.sleep(delay)
+    def set_category(self, x, y, text):
         gl = self.grid_layout
         gl.itemAtPosition(y, x).widget().setText(text)
     
-    def set_question(self, x, y, question, delay):
-        time.sleep(delay)
+    def set_question(self, x, y, question):
         gl = self.grid_layout
         gl.itemAtPosition(y, x).widget().question = question
 

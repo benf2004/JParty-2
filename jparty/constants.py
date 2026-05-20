@@ -9,11 +9,13 @@ VIDEO_PLAY_TIME = 10
 BEFORE_REVEAL_WAIT_TIME = 1
 CATEGORY_REVEAL_TIME = 2
 QUESTION_REVEAL_TIME = 0.4
+BUZZER_DELAY = 0.25 # in s
+
 
 DEFAULT_CONFIG = {
   'theme': 'Default',
   'showtextwithimages': 'Show both',
-  'earlybuzztimeout': 500,
+  'earlybuzztimeout': 10,
   'allownegative': 'True',
   'allownegativeinfinal': 'True',
   'use_wayback_first': True,

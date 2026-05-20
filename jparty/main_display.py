@@ -3,6 +3,7 @@ from PyQt6.QtCore import QMargins
 
 from PyQt6.QtWidgets import (
     QMainWindow,
+    QMessageBox,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -177,6 +178,10 @@ class HostDisplayWindow(DisplayWindow):
     def __init__(self, game):
         super().__init__(game)
         self.game = game
+        options_menu = self.menuBar().addMenu("Options")
+        self.skip_round_action = options_menu.addAction("Skip to next round")
+        self.skip_round_action.triggered.connect(self.confirm_skip_round)
+        self.skip_round_action.setEnabled(False)
 
     def host(self):
         return True
@@ -205,9 +210,50 @@ class HostDisplayWindow(DisplayWindow):
     def keyPressEvent(self, event):
         self.game.keystroke_manager.call(event.key())
 
+    def confirm_skip_round(self):
+        button = QMessageBox.question(
+            self,
+            "Skip round?",
+            "Skip the rest of this round and move to the next round?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if button == QMessageBox.StandardButton.Yes:
+            self.game.admin_skip_round()
+            self.update_skip_round_action()
+
+    def update_skip_round_action(self):
+        enabled = (
+            self.game.current_round is not None
+            and self.question_widget is None
+            and self.game.current_round.__class__.__name__ != "FinalBoard"
+        )
+        self.skip_round_action.setEnabled(enabled)
+
+    def show_welcome_widgets(self):
+        super().show_welcome_widgets()
+        self.update_skip_round_action()
+
     def hide_welcome_widgets(self):
         super().hide_welcome_widgets()
         self.hide_player_kick_buttons()
+        self.update_skip_round_action()
+
+    def hide_question(self):
+        super().hide_question()
+        self.update_skip_round_action()
+
+    def load_question(self, q):
+        self.skip_round_action.setEnabled(False)
+        super().load_question(q)
+
+    def load_final(self, q):
+        self.skip_round_action.setEnabled(False)
+        super().load_final(q)
+
+    def restart(self):
+        super().restart()
+        self.update_skip_round_action()
     
     def hide_player_kick_buttons(self):
         print("HostDisplayWindow: hide_player_kick_buttons")

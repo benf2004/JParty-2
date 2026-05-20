@@ -23,6 +23,7 @@ async function buzz() {
 }
 
 var current_page = "";
+window.auto_host_enabled = true;
 function load_page(pagename) {
     console.log("loading page "+pagename);
     if (!!current_page) {
@@ -129,6 +130,22 @@ function setAutoHostControls(payload) {
     $("#start-game-button").toggle(!!payload.can_start_game).prop("disabled", false);
     $("#play-again-button").toggle(!!payload.can_play_again).prop("disabled", false);
     $(".dispute-button").toggle(!!payload.can_dispute).prop("disabled", false);
+}
+
+function setAutoHostState(payload) {
+    if (!payload || payload.auto_host_enabled === undefined) {
+        return;
+    }
+    window.auto_host_enabled = !!payload.auto_host_enabled;
+    if (!window.auto_host_enabled) {
+        $("#display-name-section").hide();
+        $("#prompt-button").hide();
+        $(".name-hint").text("Sign below to join");
+    } else {
+        $("#display-name-section").show();
+        $("#prompt-button").show();
+        $(".name-hint").text("Type your name and sign below");
+    }
 }
 
 function openDisputeVote(payload) {
@@ -376,10 +393,13 @@ $(document).ready(function() {
             let buzzerColor = $("#buzzers").find(":selected").val()
             console.log("Selected buzzer color: " + buzzerColor)
             $("#buzzer").css("background-color", buzzerColor)
-            let displayName = $("input[name='displayname']").val().trim();
-            if (displayName == "") {
-                alert("Please type your name too");
-                return;
+            let displayName = "";
+            if (window.auto_host_enabled) {
+                displayName = $("input[name='displayname']").val().trim();
+                if (displayName == "") {
+                    alert("Please type your name too");
+                    return;
+                }
             }
             let image = signaturePad.toDataURL();
             console.log(image);
@@ -418,12 +438,20 @@ var updater = {
                     setToken(jsondata.text);
                     break;
                 case "NEW":
+                    var state = {};
+                    try {
+                        state = JSON.parse(jsondata.text || "{}");
+                    } catch (err) {
+                        console.log(err);
+                    }
+                    setAutoHostState(state);
                     load_page("name");
                     resizeCanvas();
                     break;
                 case "EXISTS":
                     console.log("Already exists" + jsondata.text);
                     state = JSON.parse(jsondata.text);
+                    setAutoHostState(state);
                     set_max_wager(state.score);
                     setAutoHostPayload(state.auto_payload);
                     load_page(state.page);

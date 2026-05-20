@@ -153,13 +153,15 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
                 self.send("UNUSED_BUZZER")
                 return
             logging.info("NEW")
-            self.send("NEW")
+            self.send("NEW", tornado.escape.json_encode({"auto_host_enabled": self.controller.game.auto_host.enabled}))
         else:
             logging.info(f"Reconnected {p}")
             self.player = p
             p.connected = True
             p.waiter = self
-            self.send("EXISTS", tornado.escape.json_encode(p.state()))
+            state = p.state()
+            state["auto_host_enabled"] = self.controller.game.auto_host.enabled
+            self.send("EXISTS", tornado.escape.json_encode(state))
 
     def on_message(self, message):
         # do this first to kill latency

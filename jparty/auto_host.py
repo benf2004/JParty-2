@@ -449,9 +449,11 @@ class AutoHostController:
         self.last_resolved_clue = None
         self.dispute_open = False
         self.dispute_votes = {}
+        self.dispute_counts = {}
         self._dispute_timer = None
         self._finalize_timer = None
         self._suppress_next_board_prompt = False
+        self._resume_clue_selection_after_dispute = False
 
     @property
     def enabled(self):
@@ -473,6 +475,8 @@ class AutoHostController:
 
     def on_game_started(self):
         self.refresh_config()
+        self.dispute_counts = {}
+        self._resume_clue_selection_after_dispute = False
         if not self.enabled or not self.game.players:
             return
         if self.player_in_control not in self.game.players:
@@ -500,6 +504,9 @@ class AutoHostController:
             self.game.set_player_in_control(player)
 
     def prompt_clue_selection(self):
+        if self.dispute_open:
+            self._resume_clue_selection_after_dispute = True
+            return
         player = self.player_in_control
         if not player or not player.waiter:
             return
@@ -533,10 +540,13 @@ class AutoHostController:
             return
         clue = self.game.current_round.get_question(int(category_index), int(row))
         if clue is not None and not clue.complete:
+            self.last_resolved_clue = None
             self.send_all_to_buzz()
             self.game.load_question(clue)
 
     def send_all_to_buzz(self):
+        if self.dispute_open:
+            return
         for player in self.game.players:
             player.page = "buzz"
             player.auto_payload = {}
@@ -592,7 +602,7 @@ class AutoHostController:
     def stumped_text(self, clue):
         if clue is None:
             return "Time is up."
-        return f"Time is up. The correct response was: {clue.answer}."
+        return f"The correct response was: {clue.answer}."
 
     def next_clue_prompt_text(self):
         return random.choice(NEXT_CLUE_LINES).format(player=self._player_name(self.player_in_control))
@@ -717,12 +727,30 @@ class AutoHostController:
         }
 
     def request_dispute(self, player):
-        if not self.enabled or self.dispute_open or not self.last_resolved_clue:
+        if (
+            not self.enabled
+            or self.dispute_open
+            or not self.last_resolved_clue
+            or self.game.active_question is not None
+        ):
             return
         if player not in self.game.players:
             return
+        if self.dispute_counts.get(player, 0) >= 5:
+            if player.waiter:
+                player.waiter.send(
+                    "AUTO_HOST_FALLBACK",
+                    "You have reached your 5 dispute limit for this game.",
+                )
+            return
+        self.dispute_counts[player] = self.dispute_counts.get(player, 0) + 1
         self.dispute_open = True
         self.dispute_votes = {}
+        self._resume_clue_selection_after_dispute = (
+            self.game.active_question is None
+            and self.game.current_round is not None
+            and not all(q.complete for q in self.game.current_round.questions)
+        )
         answer = self.last_resolved_clue["answer"]
         message = (
             f"{self._player_name(player)} has disputed the last answer, which was {answer}. "
@@ -759,8 +787,17 @@ class AutoHostController:
         result = self._dispute_plurality_result()
         if result is None:
             self._send_dispute_result("No clear dispute result. The game continues as normal.")
-            return
-        self.apply_dispute_result(result)
+        else:
+            self.apply_dispute_result(result)
+        if self._resume_clue_selection_after_dispute:
+            self._resume_clue_selection_after_dispute = False
+            if (
+                self.game.active_question is None
+                and self.game.current_round is not None
+                and self.game.current_round.__class__.__name__ != "FinalBoard"
+                and not all(q.complete for q in self.game.current_round.questions)
+            ):
+                self.prompt_clue_selection()
 
     def _dispute_plurality_result(self):
         if not self.dispute_votes:
@@ -863,10 +900,13 @@ class AutoHostController:
         if not self.enabled or self.player_in_control is None:
             return
         self._play_text_and_wait(self.next_clue_prompt_text(), "next-clue")
+        if self.dispute_open:
+            self._resume_clue_selection_after_dispute = True
+            return
         self.prompt_clue_selection()
 
     def receive_audio(self, player, purpose, audio_bytes, mime_type, sequence_id=None):
-        if not self.enabled:
+        if not self.enabled or self.dispute_open:
             return
         threading.Thread(
             target=self._process_audio,

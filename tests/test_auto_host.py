@@ -193,6 +193,69 @@ class AutoHostTests(unittest.TestCase):
             self.assertEqual(player.auto_payload, {})
             self.assertIn("PROMPT_BUZZ", [message for message, _text in player.waiter.messages])
 
+    def test_select_clue_clears_last_resolved_clue(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+        }
+        game.active_question = None
+
+        controller.select_clue(0, 1)
+
+        self.assertIsNone(controller.last_resolved_clue)
+
+    def test_request_dispute_limits_to_five_per_player(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+        }
+        player = game.players[0]
+        game.active_question = None
+
+        for _ in range(5):
+            controller.request_dispute(player)
+            self.assertTrue(controller.dispute_open)
+            controller.dispute_open = False
+            controller.dispute_votes = {}
+
+        controller.request_dispute(player)
+
+        self.assertEqual(controller.dispute_counts[player], 5)
+        self.assertIn(
+            ("AUTO_HOST_FALLBACK", "You have reached your 5 dispute limit for this game."),
+            player.waiter.messages,
+        )
+
+    def test_dispute_pauses_and_resumes_clue_selection(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.player_in_control = game.players[0]
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+        }
+        game.active_question = None
+        controller.request_dispute(game.players[1])
+
+        self.assertTrue(controller.dispute_open)
+        self.assertTrue(controller._resume_clue_selection_after_dispute)
+
+        controller.resolve_dispute()
+
+        self.assertFalse(controller.dispute_open)
+        self.assertFalse(controller._resume_clue_selection_after_dispute)
+        self.assertIn("PROMPT_SELECT_CLUE", [message for message, _text in game.players[0].waiter.messages])
+
     def test_select_clue_ignores_late_voice_result_after_clue_loaded(self):
         game = FakeGame()
         controller = AutoHostController(game)

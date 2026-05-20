@@ -1,0 +1,7 @@
+build/**
+jparty/__pycache__/**
+jparty/config.json
+latest.log
+dist**
+.idea/**
+.DS_Store

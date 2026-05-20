@@ -74,6 +74,14 @@ jobs:
         with:
           path: release-assets
 
+      - name: Package release assets
+        run: |
+          mkdir packaged-assets
+          for artifact in release-assets/*; do
+            artifact_name=$(basename "$artifact")
+            (cd release-assets && zip -r "../packaged-assets/${artifact_name}.zip" "$artifact_name")
+          done
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -82,4 +90,4 @@ jobs:
           generate_release_notes: true
           make_latest: true
           fail_on_unmatched_files: true
-          files: release-assets/**/*
+          files: packaged-assets/*

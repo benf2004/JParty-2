@@ -1,91 +1,85 @@
-name: Create Binaries and Release
+name: Create Binaries
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Git tag for the release (e.g., v1.0.0)'
-        required: true
-        type: string
+   workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
 
 jobs:
   linux-build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Install ALSA
-        run: sudo apt-get install libasound2-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Create Executable
-        id: pyinstaller_linux
         uses: sayyid5416/pyinstaller@v1
         with:
           python_ver: '3.11'
           spec: 'JParty.spec'
           requirements: 'requirements.txt'
           upload_exe_with_name: 'JParty_linux'
-      - name: Upload Linux Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: JParty_linux
-          path: dist/JParty_linux # Assuming the output is in dist/ and renamed
 
   windows-build:
     runs-on: windows-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Create Executable
-        id: pyinstaller_windows
         uses: sayyid5416/pyinstaller@v1
         with:
           python_ver: '3.11'
           spec: 'JParty.spec'
           requirements: 'requirements.txt'
           upload_exe_with_name: 'JParty_windows'
-      - name: Upload Windows Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: JParty_windows
-          path: dist/JParty_windows.exe # Assuming .exe for windows
 
   macos-arm-build:
     runs-on: macos-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Create Executable
-        id: pyinstaller_macos_arm
         uses: sayyid5416/pyinstaller@v1
         with:
           python_ver: '3.11'
           spec: 'JParty.spec'
           requirements: 'requirements.txt'
           upload_exe_with_name: 'JParty_macos_arm'
-      - name: Upload macOS ARM Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: JParty_macos_arm
-          path: dist/JParty_macos_arm # Assuming no extension for macos
-
 
   release:
-    needs: [linux-build, windows-build, macos-arm-build]
     runs-on: ubuntu-latest
+    needs:
+      - linux-build
+      - windows-build
+      - macos-arm-build
     steps:
-      - name: Download all build artifacts
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(python3 - <<'PY'
+          from jparty.version import version
+          print(version)
+          PY
+          )
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download binaries
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release-assets
 
-      - name: List artifacts for debugging
-        run: find artifacts -type f -exec ls -lh {} \;
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag }}
-          name: Release ${{ github.event.inputs.tag }}
-          body: |
-            Automated release for version ${{ github.event.inputs.tag }}.
-            See the assets below for various platform builds.
-          draft: false
-          prerelease: false
-          files: artifacts/**
+          tag_name: v${{ steps.version.outputs.version }}
+          name: JParty v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: release-assets/**/*

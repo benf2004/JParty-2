@@ -19,20 +19,33 @@ from jparty.utils import resource_path
 define("port", default=PORT, help="run on the given port", type=int)
 
 
+def bundled_path(*parts):
+    candidates = [
+        os.path.join(root, *parts),
+        os.path.join(root, "jparty", *parts),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return candidates[0]
+
+
 class Application(tornado.web.Application):
     def __init__(self, controller):
-        designer_path = os.path.join(root, "designer_site", "game")
+        buzzer_path = bundled_path("buzzer")
+        designer_path = bundled_path("designer_site", "game")
         handlers = [
             (r"/", WelcomeHandler),
             (r"/play", BuzzerHandler),
             (r"/designer", DesignerHandler),
             (r"/designer/(.*)", tornado.web.StaticFileHandler, {"path": designer_path, "default_filename": "index.html"}),
+            (r"/api/player-audio", PlayerAudioHandler),
             (r"/buzzersocket", BuzzerSocketHandler),
         ]
         settings = dict(
             cookie_secret="",
-            template_path=os.path.join(os.path.join(root, "buzzer", "templates")),
-            static_path=os.path.join(root, "buzzer", "static"),
+            template_path=os.path.join(buzzer_path, "templates"),
+            static_path=os.path.join(buzzer_path, "static"),
             xsrf_cookies=False,
             websocket_ping_interval=0.19,
         )
@@ -75,6 +88,30 @@ class BuzzerHandler(tornado.web.RequestHandler):
 class DesignerHandler(tornado.web.RequestHandler):
     def get(self):
         self.redirect("/designer/")
+
+
+class PlayerAudioHandler(tornado.web.RequestHandler):
+    def post(self):
+        controller = self.application.controller
+        token = self.get_body_argument("token", "")
+        purpose = self.get_body_argument("purpose", "")
+        sequence_id = self.get_body_argument("sequence_id", "")
+        audio_files = self.request.files.get("audio", [])
+        if not token or not purpose or not audio_files:
+            self.set_status(400)
+            self.write({"ok": False, "error": "Missing token, purpose, or audio"})
+            return
+
+        player = controller.player_with_token(token, None)
+        if player is None:
+            self.set_status(403)
+            self.write({"ok": False, "error": "Unknown player"})
+            return
+
+        upload = audio_files[0]
+        mime_type = getattr(upload, "content_type", "application/octet-stream")
+        controller.player_audio(player, purpose, upload.body, mime_type, sequence_id)
+        self.write({"ok": True})
 
 
 class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
@@ -147,6 +184,14 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
             self.wager(text)
         elif msg == "ANSWER":
             self.application.controller.answer(self.player, text)
+        elif msg == "CLUE_PICK":
+            self.application.controller.select_clue(self.player, text)
+        elif msg == "CHALLENGE_REQUEST":
+            self.application.controller.challenge_request(self.player)
+        elif msg == "CHALLENGE_VOTE":
+            self.application.controller.challenge_vote(self.player, text)
+        elif msg == "JUDGEMENT_ACCEPT":
+            self.application.controller.finalize_auto_judgement()
 
         else:
             raise Exception("Unknown message")
@@ -228,16 +273,53 @@ class BuzzerController:
 
     def wager(self, player, amount):
         i_player = self.game.players.index(player)
-        self.game.wager_trigger.emit(i_player, amount)
+        if (
+            self.game.auto_host.enabled
+            and self.game.active_question is not None
+            and self.game.active_question.dd
+            and player is self.game.auto_host.player_in_control
+        ):
+            self.game.auto_dd_wager_trigger.emit(i_player, amount)
+        else:
+            self.game.wager_trigger.emit(i_player, amount)
 
     def answer(self, player, guess):
-        if self.game:
+        if self.game and self.game.auto_host.enabled and self.game.answering_player is player and self.game.active_question is not None:
+            self.game.auto_host.receive_text_answer(player, guess)
+            player.page = "null"
+        elif self.game:
             self.game.answer(player, guess)
             player.page = "null"
 
     def new_player(self, player):
         self.connected_players.append(player)
         self.game.new_player_trigger.emit()
+
+    def select_clue(self, player, text):
+        if not self.game or not self.game.auto_host.enabled:
+            return
+        try:
+            category_index, row = [int(part) for part in str(text).split(",", 1)]
+        except (TypeError, ValueError):
+            return
+        if player is self.game.auto_host.player_in_control:
+            self.game.auto_select_clue_trigger.emit(category_index, row)
+
+    def player_audio(self, player, purpose, audio_bytes, mime_type, sequence_id=None):
+        if self.game and self.game.auto_host.enabled:
+            self.game.auto_host.receive_audio(player, purpose, audio_bytes, mime_type, sequence_id)
+
+    def challenge_request(self, player):
+        if self.game and self.game.auto_host.enabled:
+            self.game.auto_host.request_challenge(player)
+
+    def challenge_vote(self, player, text):
+        if self.game and self.game.auto_host.enabled:
+            self.game.auto_host.receive_challenge_vote(player, text)
+
+    def finalize_auto_judgement(self):
+        if self.game and self.game.auto_host.enabled:
+            self.game.auto_finalize_judgement_trigger.emit()
 
     @classmethod
     def localip(self):

@@ -89,6 +89,132 @@ function answerForm() {
     return false;
 }
 
+function cluePick(categoryIndex, row) {
+    send("CLUE_PICK", categoryIndex + "," + row);
+    load_page(null);
+}
+
+function requestChallenge() {
+    send("CHALLENGE_REQUEST");
+    $("#judgement-text").text("Challenge requested");
+}
+
+function acceptJudgement() {
+    send("JUDGEMENT_ACCEPT");
+    load_page(null);
+}
+
+function challengeVote(vote) {
+    send("CHALLENGE_VOTE", vote);
+    load_page(null);
+}
+
+function setAutoHostPayload(payload) {
+    if (!payload) {
+        return;
+    }
+    if (payload.categories && payload.clues) {
+        renderClueGrid(payload);
+    }
+    if (payload.max_wager !== undefined) {
+        set_max_wager(payload.max_wager);
+    }
+}
+
+function renderClueGrid(payload) {
+    var grid = $("#clue-grid");
+    grid.empty();
+    payload.categories.forEach(function(category, categoryIndex) {
+        grid.append($("<div>").addClass("clue-category").text(category));
+    });
+    payload.clues.forEach(function(clue) {
+        var button = $("<button>")
+            .addClass("clue-button")
+            .text(clue.complete ? "" : "$" + clue.value)
+            .prop("disabled", clue.complete)
+            .on("click", function() {
+                cluePick(clue.category_index, clue.row);
+            });
+        grid.append(button);
+    });
+}
+
+function supportedAudioType() {
+    var types = [
+        "audio/webm;codecs=opus",
+        "audio/ogg;codecs=opus",
+        "audio/mp4",
+        "audio/webm"
+    ];
+    if (!window.MediaRecorder) {
+        return "";
+    }
+    for (var i = 0; i < types.length; i++) {
+        if (MediaRecorder.isTypeSupported(types[i])) {
+            return types[i];
+        }
+    }
+    return "";
+}
+
+async function recordAutoHostAudio(purpose) {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        alert("Microphone recording is not available. Please use the on-screen fallback.");
+        return;
+    }
+
+    var status = $("#recording-status");
+    status.text("Recording...");
+    try {
+        var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        var mimeType = supportedAudioType();
+        var options = mimeType ? { mimeType: mimeType } : {};
+        var recorder = new MediaRecorder(stream, options);
+        var chunks = [];
+        recorder.ondataavailable = function(event) {
+            if (event.data && event.data.size > 0) {
+                chunks.push(event.data);
+            }
+        };
+        recorder.onstop = async function() {
+            stream.getTracks().forEach(function(track) { track.stop(); });
+            var blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
+            await uploadAutoHostAudio(purpose, blob);
+        };
+        recorder.start();
+        setTimeout(function() {
+            if (recorder.state === "recording") {
+                recorder.stop();
+            }
+        }, purpose === "answer" ? 5500 : 3500);
+    } catch (err) {
+        console.log(err);
+        status.text("");
+        alert("Could not access the microphone. Please use the on-screen fallback.");
+    }
+}
+
+async function uploadAutoHostAudio(purpose, blob) {
+    var status = $("#recording-status");
+    status.text("Sending...");
+    var form = new FormData();
+    form.append("token", getToken());
+    form.append("purpose", purpose);
+    form.append("sequence_id", String(new Date().getTime()));
+    form.append("audio", blob, "auto-host-audio.webm");
+    try {
+        var response = await fetch("/api/player-audio", { method: "POST", body: form });
+        if (!response.ok) {
+            throw new Error("Upload failed");
+        }
+        status.text("Sent");
+    } catch (err) {
+        console.log(err);
+        status.text("");
+        alert("Could not send audio. Please use the on-screen fallback.");
+    }
+}
+
 function nameForm(name, buzzerColor) {
     console.log(name);
     send("NAME",name, buzzerColor);
@@ -218,6 +344,7 @@ var updater = {
                     console.log("Already exists" + jsondata.text);
                     state = JSON.parse(jsondata.text);
                     set_max_wager(state.score);
+                    setAutoHostPayload(state.auto_payload);
                     load_page(state.page);
                     break;
                 case "PROMPTWAGER":
@@ -229,6 +356,34 @@ var updater = {
                     break;
                 case "TOOLATE":
                     answerForm();
+                    break;
+                case "PROMPT_SELECT_CLUE":
+                    setAutoHostPayload(JSON.parse(jsondata.text));
+                    load_page("select");
+                    break;
+                case "PROMPT_RECORD_ANSWER":
+                    load_page("record_answer");
+                    break;
+                case "PROMPT_DD_WAGER":
+                    set_max_wager(jsondata.text);
+                    load_page("dd_wager");
+                    break;
+                case "JUDGEMENT_RESULT":
+                    var judgement = JSON.parse(jsondata.text);
+                    $("#judgement-text").text(judgement.verdict.toUpperCase());
+                    $("#judgement-reason").text(judgement.reason + " " + judgement.transcript);
+                    load_page("judgement");
+                    break;
+                case "CHALLENGE_OPEN":
+                    var challenge = JSON.parse(jsondata.text);
+                    $("#challenge-text").text(challenge.answering_player + " challenged. Vote:");
+                    load_page("challenge");
+                    break;
+                case "CHALLENGE_RESULT":
+                    load_page("buzz");
+                    break;
+                case "AUTO_HOST_FALLBACK":
+                    alert(jsondata.text);
                     break;
             }
         }

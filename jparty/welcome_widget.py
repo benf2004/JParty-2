@@ -437,9 +437,11 @@ class SettingsMenu(QDialog):
         current_allownegative = config.get('allownegative', DEFAULT_CONFIG['allownegative'])
         current_allownegativeinfinal = config.get('allownegativeinfinal', DEFAULT_CONFIG['allownegativeinfinal'])
         current_use_wayback_first = config.get('use_wayback_first', DEFAULT_CONFIG['use_wayback_first'])
+        current_auto_host = DEFAULT_CONFIG['auto_host'].copy()
+        current_auto_host.update(config.get('auto_host', {}) or {})
 
         self.setWindowTitle("Settings")
-        self.setFixedSize(400, 400)
+        self.setFixedSize(560, 700)
         layout = QVBoxLayout()
 
         # Add info about theme change auto-restarting the game
@@ -605,6 +607,54 @@ class SettingsMenu(QDialog):
         allownegativeinfinal_layout.addWidget(allownegativeinfinal_label)
         allownegativeinfinal_layout.addWidget(self.allownegativeinfinal_combobox)
 
+        auto_host_label = QLabel("Auto Host:", self)
+        self.auto_host_combobox = QComboBox(self)
+        self.auto_host_combobox.addItem("False")
+        self.auto_host_combobox.addItem("True")
+        self.auto_host_combobox.setCurrentText("True" if current_auto_host.get('enabled') else "False")
+
+        ai_provider_label = QLabel("Auto Host AI provider:", self)
+        self.auto_host_provider_combobox = QComboBox(self)
+        self.auto_host_provider_combobox.addItem("openai")
+        self.auto_host_provider_combobox.addItem("local")
+        self.auto_host_provider_combobox.setCurrentText(current_auto_host.get('ai_provider', 'openai'))
+
+        leniency_label = QLabel("Auto Host leniency:", self)
+        self.auto_host_leniency_combobox = QComboBox(self)
+        self.auto_host_leniency_combobox.addItem("strict")
+        self.auto_host_leniency_combobox.addItem("normal")
+        self.auto_host_leniency_combobox.addItem("generous")
+        self.auto_host_leniency_combobox.setCurrentText(current_auto_host.get('leniency', 'normal'))
+
+        auto_host_layout = QHBoxLayout()
+        auto_host_layout.addWidget(auto_host_label)
+        auto_host_layout.addWidget(self.auto_host_combobox)
+
+        auto_host_provider_layout = QHBoxLayout()
+        auto_host_provider_layout.addWidget(ai_provider_label)
+        auto_host_provider_layout.addWidget(self.auto_host_provider_combobox)
+
+        auto_host_leniency_layout = QHBoxLayout()
+        auto_host_leniency_layout.addWidget(leniency_label)
+        auto_host_leniency_layout.addWidget(self.auto_host_leniency_combobox)
+
+        openai_key_label = QLabel("OpenAI API Key:", self)
+        self.openai_api_key_input = QLineEdit(self)
+        self.openai_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.openai_api_key_input.setPlaceholderText("sk-...")
+        self.openai_api_key_input.setText(current_auto_host.get('openai_api_key', ''))
+
+        openai_key_hint = QLabel("Stored locally on this computer. Leave blank to use OPENAI_API_KEY.", self)
+        openai_key_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        openai_key_hint.setWordWrap(True)
+        hint_palette = openai_key_hint.palette()
+        hint_palette.setColor(QPalette.ColorRole.WindowText, QColor(128, 128, 128))
+        openai_key_hint.setPalette(hint_palette)
+
+        openai_key_layout = QHBoxLayout()
+        openai_key_layout.addWidget(openai_key_label)
+        openai_key_layout.addWidget(self.openai_api_key_input)
+
         # Add the horizontal layouts to the main layout
         layout.addLayout(settings_info_layout)
         layout.addSpacing(20)
@@ -613,6 +663,11 @@ class SettingsMenu(QDialog):
         layout.addLayout(earlybuzztimeout_layout)
         layout.addLayout(allownegative_layout)
         layout.addLayout(allownegativeinfinal_layout)
+        layout.addLayout(auto_host_layout)
+        layout.addLayout(auto_host_provider_layout)
+        layout.addLayout(auto_host_leniency_layout)
+        layout.addLayout(openai_key_layout)
+        layout.addWidget(openai_key_hint)
 
         # Add space before the Apply button
         layout.addSpacing(10)
@@ -668,6 +723,14 @@ class SettingsMenu(QDialog):
         # Use Wayback Machine first setting
         use_wayback_first = self.wayback_combobox.currentText() == "True"
 
+        auto_host = config.get('auto_host', DEFAULT_CONFIG['auto_host']).copy()
+        auto_host['enabled'] = self.auto_host_combobox.currentText() == "True"
+        auto_host['ai_provider'] = self.auto_host_provider_combobox.currentText()
+        auto_host['openai_api_key'] = self.openai_api_key_input.text().strip()
+        auto_host['selection_mode'] = 'voice_with_gui_fallback'
+        auto_host['answer_judging'] = 'auto_with_challenge'
+        auto_host['leniency'] = self.auto_host_leniency_combobox.currentText()
+
         # Save config
         logging.info("Saving settings...")
         with open(config_path, 'w') as f:
@@ -679,6 +742,7 @@ class SettingsMenu(QDialog):
                 'allownegativeinfinal': allownegativeinfinal,
                 'use_wayback_first': use_wayback_first,
                 'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
+                'auto_host': auto_host,
             }, f)
 
         if requires_restart:

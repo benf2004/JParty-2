@@ -20,4 +20,14 @@ DEFAULT_CONFIG = {
   'allownegativeinfinal': 'True',
   'use_wayback_first': True,
   'mute_sound': False,
+  'auto_host': {
+    'enabled': False,
+    'ai_provider': 'openai',
+    'openai_api_key': '',
+    'selection_mode': 'voice_with_gui_fallback',
+    'answer_judging': 'auto_with_challenge',
+    'leniency': 'normal',
+    'auto_judge_confidence': 0.82,
+    'host_review_confidence': 0.55,
+  },
 }

@@ -22,6 +22,7 @@ from jparty.constants import FJTIME, QUESTIONTIME, VIDEO_PORT, BUZZER_DELAY
 from jparty.environ import root
 from jparty.stats import StatsBox
 from jparty.paths import config_path
+from jparty.auto_host import AutoHostController
 
 
 class QuestionTimer(object):
@@ -186,6 +187,10 @@ class Game(QObject):
     new_player_trigger = pyqtSignal()
     wager_trigger = pyqtSignal(int, int)
     toolate_trigger = pyqtSignal()
+    auto_select_clue_trigger = pyqtSignal(int, int)
+    auto_answer_text_trigger = pyqtSignal(int, str)
+    auto_dd_wager_trigger = pyqtSignal(int, int)
+    auto_finalize_judgement_trigger = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -250,6 +255,7 @@ class Game(QObject):
         self.song_player.set_muted(self.muted)
 
         self.buzzer_controller = None
+        self.auto_host = AutoHostController(self)
 
         self.keystroke_manager = KeystrokeManager()
 
@@ -333,6 +339,10 @@ class Game(QObject):
         self.buzz_trigger.connect(self.buzz)
         self.new_player_trigger.connect(self.new_player)
         self.toolate_trigger.connect(self.__toolate)
+        self.auto_select_clue_trigger.connect(self.auto_host.select_clue)
+        self.auto_answer_text_trigger.connect(self.auto_host.judge_answer)
+        self.auto_dd_wager_trigger.connect(self.auto_host.apply_daily_double_wager)
+        self.auto_finalize_judgement_trigger.connect(self.auto_host.finalize_pending_judgement)
 
         # Setup video server
         def run_server():
@@ -379,6 +389,8 @@ class Game(QObject):
         # Update config when game starts in case host made some settings changes
         with open(config_path, 'r') as f:
             self.config = json.load(f)
+        self.auto_host.refresh_config()
+        self.auto_host.on_game_started()
 
         # preload images for first round
         logging.info(f"Start game -> triggering image loading")
@@ -405,6 +417,8 @@ class Game(QObject):
         self.players = self.buzzer_controller.connected_players
         self.dc.scoreboard.refresh_players()
         self.host_display.welcome_widget.check_start()
+        if self.players:
+            self.auto_host.on_new_player(self.players[-1])
 
     def remove_player(self, player):
         self.players.remove(player)
@@ -510,6 +524,7 @@ class Game(QObject):
             self.answering_player = player
             self.keystroke_manager.activate("CORRECT_ANSWER", "INCORRECT_ANSWER")
             self.dc.borders.lights(False)
+            self.auto_host.prompt_answer(player)
         else:
             pass
 
@@ -533,6 +548,7 @@ class Game(QObject):
         # clear stats
         for player in self.players:
             self.dc.player_widget(player).clear_stats()
+        self.auto_host.after_back_to_board()
 
     def set_player_in_control(self, new_player):
         for player in self.players:
@@ -546,6 +562,8 @@ class Game(QObject):
             effect.setBlurRadius(100)
             effect.setOffset(0, 0)
             self.host_display.player_widget(new_player).setGraphicsEffect(effect)
+        if getattr(self, "auto_host", None) is not None:
+            self.auto_host.player_in_control = new_player
 
     def next_round(self):
         logging.info("next round")
@@ -755,7 +773,8 @@ class Game(QObject):
         if q.dd:
             logging.info("Daily double!")
             self.play_sound("dd.wav")
-            self.soliciting_player = True
+            if not self.auto_host.prompt_daily_double_wager():
+                self.soliciting_player = True
         elif q.includes_audio:
             self.keystroke_manager.activate("PLAY_AUDIO")
         else:
@@ -841,6 +860,7 @@ class Player(object):
         self.wager = None
         self.finalanswer = ""
         self.page = "buzz"
+        self.auto_payload = {}
         self.istimedout = False
         
         # Stats
@@ -857,7 +877,7 @@ class Player(object):
         return int.from_bytes(self.token, sys.byteorder)
 
     def state(self):
-        return {"page": self.page, "score": self.score}
+        return {"page": self.page, "score": self.score, "auto_payload": self.auto_payload}
 
 class WagerDialog(QDialog):
     def __init__(self, max_wager, parent=None):

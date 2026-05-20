@@ -12,12 +12,11 @@ from PyQt6.QtCore import Qt, QSize
 from jparty.paths import config_path
 
 def get_base_path(file=None):
-    path = ""
-    try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
-        path = sys._MEIPASS
-    except Exception:
-        path = os.path.abspath(".")
+    if getattr(sys, "frozen", False):
+        # PyInstaller creates a temp folder and stores bundled resources in _MEIPASS.
+        path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    else:
+        path = os.path.dirname(os.path.abspath(__file__))
     if file is None:
         return path
     return os.path.join(path, file)

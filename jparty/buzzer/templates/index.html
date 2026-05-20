@@ -75,6 +75,44 @@
       </form>
   </div>
 
+  <div class="w3-container select-page auto-host-page" style="margin-top:20px">
+      <div class="prompt">Pick the next clue</div>
+      <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('clue_selection')">Speak Clue</button>
+      <div id="recording-status" class="hints"></div>
+      <div id="clue-grid" class="clue-grid"></div>
+  </div>
+
+  <div class="w3-container record_answer-page auto-host-page" style="margin-top:90px">
+      <div class="prompt">Record your answer</div>
+      <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('answer')">Record Answer</button>
+      <form onsubmit="answerForm();" action="javascript:void(0);" class="answer_form fallback-form">
+          <input type='text' name="answer" class="answer_input text_input" placeholder="Type answer"/>
+          <button type="submit" class="jparty-button submit">Submit Text</button>
+      </form>
+  </div>
+
+  <div class="w3-container dd_wager-page auto-host-page" style="margin-top:90px">
+      <div class="prompt">Daily Double Wager</div>
+      <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('daily_double_wager')">Speak Wager</button>
+      <form onsubmit="wagerForm();" action="javascript:void(0);" class="wager_form fallback-form">
+          <input type='number' name="wager" pattern="[0-9]*" class="text_input wager_input" min="0" max="100" step="0"/>
+          <button type="submit" class="jparty-button submit">Submit Wager</button>
+      </form>
+  </div>
+
+  <div class="w3-container judgement-page auto-host-page" style="margin-top:90px">
+      <div id="judgement-text" class="prompt"></div>
+      <div id="judgement-reason" class="hints"></div>
+      <button type="button" class="jparty-button submit" onclick="acceptJudgement()">Accept</button>
+      <button type="button" class="jparty-button submit" onclick="requestChallenge()">Challenge</button>
+  </div>
+
+  <div class="w3-container challenge-page auto-host-page" style="margin-top:90px">
+      <div id="challenge-text" class="prompt">Vote on the challenged answer</div>
+      <button type="button" class="jparty-button submit" onclick="challengeVote('correct')">Correct</button>
+      <button type="button" class="jparty-button submit" onclick="challengeVote('incorrect')">Incorrect</button>
+  </div>
+
   </body>
 
 </html>

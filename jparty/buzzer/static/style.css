@@ -157,6 +157,13 @@ button:active {
 .answer-page {
     display: None;
 }
+.select-page,
+.record_answer-page,
+.dd_wager-page,
+.judgement-page,
+.challenge-page {
+    display: None;
+}
 .prompt {
     color: white;
     text-align: center;
@@ -183,4 +190,55 @@ button:active {
 }
 .name-hint {
     margin-bottom:10pt;
+}
+
+.auto-host-page .record-button {
+    width: 100%;
+    min-height: 120px;
+    margin-bottom: 12px;
+}
+
+.fallback-form {
+    margin-top: 18px;
+}
+
+.clue-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.clue-category,
+.clue-button {
+    min-height: 56px;
+    border: 3px solid white;
+    border-radius: 4px;
+    background: #1010a1;
+    color: white;
+    font-family: Anton;
+    font-size: 18px;
+    overflow-wrap: anywhere;
+}
+
+.clue-button {
+    color: #ffcc00;
+    font-size: 24px;
+}
+
+.clue-button:disabled {
+    color: transparent;
+    background: #333;
+}
+
+@media (max-width: 700px) {
+    .clue-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .clue-category,
+    .clue-button {
+        min-height: 48px;
+        font-size: 16px;
+    }
 }

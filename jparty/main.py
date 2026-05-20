@@ -37,8 +37,14 @@ def check_single_instance():
     try:
         logging.info(f"Attempting to acquire lock at {lock_path}")
         _instance_lock_file = open(lock_path, "w")
+        flags = fcntl.fcntl(_instance_lock_file.fileno(), fcntl.F_GETFD)
+        fcntl.fcntl(_instance_lock_file.fileno(), fcntl.F_SETFD, flags | fcntl.FD_CLOEXEC)
         # LOCK_EX: exclusive lock, LOCK_NB: non-blocking
         fcntl.lockf(_instance_lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _instance_lock_file.seek(0)
+        _instance_lock_file.truncate()
+        _instance_lock_file.write(str(os.getpid()))
+        _instance_lock_file.flush()
         logging.info("Lock acquired successfully.")
         return True
     except (IOError, ImportError) as e:
@@ -161,13 +167,13 @@ def main():
                 # Use subprocess.Popen but don't wait for it.
                 # We store it in the app instance to prevent it from being garbage collected if needed,
                 # though Popen objects usually persist.
-                app.buzzer_process = subprocess.Popen([sys.executable, "--buzzers"], env=env)
+                app.buzzer_process = subprocess.Popen([sys.executable, "--buzzers"], env=env, close_fds=True)
                 logging.info("Started buzzer subprocess")
             else:
                 base_path = os.path.abspath(".")
                 buzzer_script = os.path.join(base_path, "physicalbuzzers", "physicalbuzzers.py")
                 if os.path.exists(buzzer_script):
-                    app.buzzer_process = subprocess.Popen([sys.executable, buzzer_script])
+                    app.buzzer_process = subprocess.Popen([sys.executable, buzzer_script], close_fds=True)
                     logging.info("Started buzzer subprocess (dev)")
         except Exception as e:
             logging.error(f"Could not start buzzer subprocess: {e}")

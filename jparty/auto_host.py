@@ -1,5 +1,6 @@
 import json
 import hashlib
+import html
 import logging
 import os
 import random
@@ -31,7 +32,9 @@ DEFAULT_AUTO_HOST_CONFIG = {
     "local_stt_model": "whisper",
     "local_tts_base_url": "http://localhost:8880/v1",
     "local_tts_model": "kokoro",
+    "local_tts_preset": "kokoro",
     "local_tts_voice": "af_heart",
+    "local_tts_clone_voice": "my_voice",
     "selection_mode": "voice_with_gui_fallback",
     "answer_judging": "auto_with_challenge",
     "leniency": "normal",
@@ -67,6 +70,31 @@ NEXT_CLUE_LINES = [
     "{player}, where are we going next?",
 ]
 
+TTS_KEEP_SPELLED_WORDS = {
+    "AI",
+    "API",
+    "BBC",
+    "CIA",
+    "DNA",
+    "DVD",
+    "FBI",
+    "HTML",
+    "HTTP",
+    "JFK",
+    "MLB",
+    "NASA",
+    "NBA",
+    "NFL",
+    "NHL",
+    "TV",
+    "UK",
+    "UN",
+    "US",
+    "USA",
+    "USSR",
+    "WWW",
+}
+
 
 @dataclass
 class Judgement:
@@ -81,6 +109,7 @@ class AutoHostAI:
         self.config = DEFAULT_AUTO_HOST_CONFIG.copy()
         self.config.update(config or {})
         self.provider = self.config.get("ai_provider", "openai")
+        self._speech_lock = threading.Lock()
 
     def api_key(self):
         return os.environ.get("OPENAI_API_KEY") or self.config.get("openai_api_key", "")
@@ -382,36 +411,111 @@ class AutoHostAI:
         voice = self.config.get("local_tts_voice", "af_heart")
         model = self.config.get("local_tts_model", "kokoro")
         base_url = self._normalize_base_url(self.config.get("local_tts_base_url"))
+        spoken_text = self._tts_spoken_text(text, model)
         cache_dir = os.path.join(user_data_dir, "auto_host_audio_cache")
         os.makedirs(cache_dir, exist_ok=True)
         cache_key = hashlib.sha256(
-            f"local|{base_url}|{model}|{voice}|{purpose}|{text}".encode("utf-8")
+            f"local|{base_url}|{model}|{voice}|{purpose}|{spoken_text}".encode("utf-8")
         ).hexdigest()
         path = os.path.join(cache_dir, f"{cache_key}.wav")
         if os.path.exists(path) and os.path.getsize(path) > 0:
             return path
+
+        with self._speech_lock:
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                return path
+            return self._generate_local_speech_file(base_url, model, voice, spoken_text, path)
+
+    def _generate_local_speech_file(self, base_url, model, voice, text, path):
         try:
-            response = requests.post(
-                f"{base_url}/audio/speech",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "model": model,
-                    "voice": voice,
-                    "input": text,
-                    "response_format": "wav",
-                    "speed": 1.3,
-                },
-                timeout=float(os.environ.get("JPARTY_LOCAL_TTS_TIMEOUT", "45")),
-            )
-            response.raise_for_status()
+            response = self._post_local_speech(base_url, model, voice, text)
+            if not response.ok:
+                logging.error(
+                    "Auto Host local TTS returned %s from %s: %s",
+                    response.status_code,
+                    base_url,
+                    response.text[:500],
+                )
+                response.raise_for_status()
             tmp_path = path + ".tmp"
             with open(tmp_path, "wb") as audio_file:
                 audio_file.write(response.content)
             os.replace(tmp_path, path)
             return path
-        except Exception:
-            logging.exception("Auto Host local TTS generation failed")
+        except Exception as exc:
+            logging.warning("Auto Host local TTS generation skipped: %s", exc)
             return None
+
+    def _post_local_speech(self, base_url, request_model, voice, text):
+        timeout = float(os.environ.get("JPARTY_LOCAL_TTS_TIMEOUT", self._local_tts_default_timeout(base_url)))
+        attempts = int(os.environ.get("JPARTY_LOCAL_TTS_ATTEMPTS", "2"))
+        last_error = None
+        for attempt in range(max(1, attempts)):
+            try:
+                return requests.post(
+                    f"{base_url}/audio/speech",
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "model": request_model,
+                        "voice": voice,
+                        "input": text,
+                        "response_format": "wav",
+                        "speed": 1.3,
+                    },
+                    timeout=timeout,
+                )
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                last_error = exc
+                if attempt >= attempts - 1:
+                    break
+                logging.warning(
+                    "Auto Host local TTS connection failed at %s; retrying once: %s",
+                    base_url,
+                    exc,
+                )
+                time.sleep(1.0)
+        raise last_error
+
+    def _local_tts_default_timeout(self, base_url):
+        return "120" if self.uses_cloned_local_tts(base_url=base_url) else "45"
+
+    def uses_cloned_local_tts(self, base_url=None):
+        if self.provider != "local":
+            return False
+        preset = self.config.get("local_tts_preset", "")
+        model = self.config.get("local_tts_model", "")
+        base_url = base_url or self.config.get("local_tts_base_url", "")
+        return (
+            preset == "kokoclone_clone"
+            or model == "kokoclone"
+            or "8892" in str(base_url)
+        )
+
+    def should_preload_audio(self):
+        return not self.uses_cloned_local_tts()
+
+    def _tts_spoken_text(self, text, model):
+        text = html.unescape(text or "")
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = text.replace("_", " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        if model in ("kokoro", "kokoclone"):
+            text = self._soften_all_caps_for_tts(text)
+        return text
+
+    def _soften_all_caps_for_tts(self, text):
+        def replace_word(match):
+            word = match.group(0)
+            normalized = re.sub(r"[^A-Z0-9]", "", word)
+            if normalized in TTS_KEEP_SPELLED_WORDS:
+                return word
+            if len(normalized) <= 2 or any(char.isdigit() for char in normalized):
+                return word
+            if not re.search(r"[AEIOUY]", normalized):
+                return word
+            return word.lower()
+
+        return re.sub(r"\b[A-Z][A-Z0-9'-]{2,}\b", replace_word, text)
 
     def _openai_json(self, prompt, response_format, api_key, timeout=30):
         try:
@@ -740,12 +844,12 @@ class AutoHostController:
         threading.Thread(target=self._read_clue_then_open, args=(clue,), daemon=True).start()
 
     def preload_round_audio(self, board):
-        if not self.enabled or board is None:
+        if not self.enabled or board is None or not self.ai.should_preload_audio():
             return
         threading.Thread(target=self._preload_round_audio, args=(board,), daemon=True).start()
 
     def preload_buzz_acknowledgement(self, player):
-        if not self.enabled or player is None:
+        if not self.enabled or player is None or not self.ai.should_preload_audio():
             return
         threading.Thread(
             target=self.ai.speech_file,

@@ -2,6 +2,7 @@ import unittest
 import tempfile
 from unittest.mock import patch
 
+from jparty import auto_host as auto_host_module
 from jparty.auto_host import AutoHostController, AutoHostAI, Judgement
 
 try:
@@ -74,10 +75,13 @@ class FakeQuestion:
 
 
 class FakeResponse:
-    def __init__(self, json_data=None, content=b"audio", raise_error=None):
+    def __init__(self, json_data=None, content=b"audio", raise_error=None, status_code=200, text=""):
         self._json_data = json_data or {}
         self.content = content
         self.raise_error = raise_error
+        self.status_code = status_code
+        self.text = text
+        self.ok = 200 <= status_code < 400
 
     def raise_for_status(self):
         if self.raise_error:
@@ -580,6 +584,52 @@ class AutoHostTests(unittest.TestCase):
         self.assertEqual(calls[0][0], "http://localhost:8880/v1/audio/speech")
         self.assertEqual(calls[0][1]["json"]["voice"], "af_heart")
 
+    def test_kokoro_tts_softens_all_caps_words_before_speech(self):
+        ai = AutoHostAI({
+            "ai_provider": "local",
+            "local_tts_base_url": "http://localhost:8880/v1/",
+            "local_tts_model": "kokoro",
+            "local_tts_voice": "af_heart",
+        })
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(content=b"RIFF-local-wav")
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("jparty.auto_host.user_data_dir", tmpdir), patch(
+            "jparty.auto_host.requests.post", side_effect=fake_post
+        ):
+            ai.speech_file("THIS CATEGORY is about NASA and COMPUTERS", "host")
+
+        self.assertEqual(
+            calls[0][1]["json"]["input"],
+            "this category is about NASA and computers",
+        )
+
+    def test_local_tts_retries_connection_failure_once(self):
+        ai = AutoHostAI({
+            "ai_provider": "local",
+            "local_tts_base_url": "http://localhost:8892/v1/",
+            "local_tts_model": "kokoclone",
+            "local_tts_voice": "my_voice",
+        })
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            if len(calls) == 1:
+                raise auto_host_module.requests.exceptions.ConnectionError("dropped")
+            return FakeResponse(content=b"RIFF-local-wav")
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("jparty.auto_host.user_data_dir", tmpdir), patch(
+            "jparty.auto_host.requests.post", side_effect=fake_post
+        ), patch("jparty.auto_host.time.sleep"):
+            path = ai.speech_file("Hello", "host")
+
+        self.assertIsNotNone(path)
+        self.assertEqual(len(calls), 2)
+
     def test_local_tts_failure_returns_none(self):
         ai = AutoHostAI({"ai_provider": "local"})
 
@@ -587,6 +637,22 @@ class AutoHostTests(unittest.TestCase):
             "jparty.auto_host.requests.post", side_effect=RuntimeError("down")
         ), patch("jparty.auto_host.logging.exception"):
             self.assertIsNone(ai.speech_file("Hello", "host"))
+
+    def test_kokoclone_local_tts_skips_background_preload(self):
+        game = FakeGame()
+        game.config["auto_host"].update({
+            "ai_provider": "local",
+            "local_tts_preset": "kokoclone_clone",
+            "local_tts_base_url": "http://localhost:8892/v1",
+            "local_tts_model": "kokoclone",
+        })
+        controller = AutoHostController(game)
+
+        with patch("jparty.auto_host.threading.Thread") as thread:
+            controller.preload_round_audio(game.current_round)
+            controller.preload_buzz_acknowledgement(game.players[0])
+
+        thread.assert_not_called()
 
     def test_fast_judgement_skips_openai_for_exact_match(self):
         game = FakeGame()

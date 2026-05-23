@@ -8,6 +8,7 @@ This guide gets Auto Host running without paid AI APIs. Everything runs on your 
 - **whisper.cpp** runs Whisper locally. JParty uses it to turn player microphone recordings into text.
 - **Kokoro-FastAPI** runs a better local voice server. JParty uses it to speak host lines.
 - **Docker Desktop** runs Kokoro without making you set up a Python voice server by hand.
+- **KokoClone** is the optional lighter voice-cloning path. It runs in its own Python 3.12 environment and does not require Docker.
 - **ffmpeg** converts audio formats so phone recordings and generated speech work smoothly.
 
 JParty does not secretly install or launch these during a game. You run the setup script yourself, and the script starts local services on your computer.
@@ -38,7 +39,7 @@ Whisper: base.en
 TTS: Kokoro af_heart
 ```
 
-During setup, the script asks whether you want to set up voice cloning. If you say yes, it runs the separate voice-clone addon setup and prints cloned-voice TTS settings instead of Kokoro settings.
+During setup, the script asks whether you want to set up voice cloning. If you say yes, it runs the separate KokoClone addon setup and prints cloned-voice TTS settings instead of Kokoro settings. If you say no, it uses Kokoro through Docker.
 
 ## Smaller Or Larger Models
 
@@ -121,6 +122,7 @@ The setup script also prints logs and manual stop commands. The common stop comm
 pkill -f 'ollama serve'
 pkill -f 'whisper-server'
 docker stop jparty-kokoro-tts
+scripts/voice_clone.sh stop-kokoclone
 ```
 
 ## Uninstalling The Full Local Setup
@@ -145,6 +147,13 @@ If the host does not speak, check the Kokoro TTS server:
 
 ```bash
 curl http://127.0.0.1:8880/v1/audio/voices
+```
+
+If you are using KokoClone, check its adapter:
+
+```bash
+curl http://127.0.0.1:8892/health
+tail -80 /tmp/jparty-kokoclone-adapter.log
 ```
 
 If judging is slow, switch to:

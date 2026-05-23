@@ -75,6 +75,8 @@ fi
 stop_process "ollama serve" "Ollama"
 stop_process "whisper-server" "whisper.cpp server"
 stop_process "local_macos_tts_server.py" "fallback macOS TTS server"
+stop_process "kokoclone_openai_tts_adapter.py" "KokoClone adapter"
+rm -f /tmp/jparty-kokoclone-adapter.pid
 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   if docker ps -a --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
@@ -84,13 +86,6 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     echo "Kokoro TTS container was not found."
   fi
 
-  if docker ps -a --format '{{.Names}}' | grep -qx 'jparty-voice-clone-tts'; then
-    echo "Removing voice-clone TTS container..."
-    docker rm -f jparty-voice-clone-tts >/dev/null || true
-  else
-    echo "Voice-clone TTS container was not found."
-  fi
-
   if docker image inspect ghcr.io/remsky/kokoro-fastapi-cpu:latest >/dev/null 2>&1; then
     echo "Removing Kokoro TTS Docker image..."
     docker rmi ghcr.io/remsky/kokoro-fastapi-cpu:latest >/dev/null || true
@@ -98,12 +93,6 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     echo "Kokoro TTS Docker image was not found."
   fi
 
-  if docker image inspect ghcr.io/matatonic/openedai-speech:latest >/dev/null 2>&1; then
-    echo "Removing voice-clone TTS Docker image..."
-    docker rmi ghcr.io/matatonic/openedai-speech:latest >/dev/null || true
-  else
-    echo "Voice-clone TTS Docker image was not found."
-  fi
 else
   echo "Docker is not available or not running; skipping Kokoro Docker cleanup."
 fi

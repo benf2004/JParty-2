@@ -13,7 +13,7 @@ WHISPER_MODEL="${JPARTY_WHISPER_MODEL:-base.en}"
 APP_SUPPORT="${HOME}/Library/Application Support/JParty/local-auto-host"
 WHISPER_MODEL_FILE="${APP_SUPPORT}/models/ggml-${WHISPER_MODEL}.bin"
 OLLAMA_HEALTH_URL="${LLM_URL%/v1}/api/tags"
-VOICE_ENV="${APP_SUPPORT}/voice-clone/voice-clone.env"
+KOKOCLONE_ENV="${APP_SUPPORT}/kokoclone/kokoclone.env"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
@@ -66,7 +66,9 @@ fi
 
 require_command ollama "Run scripts/setup_full_local_auto_host_macos.sh first."
 require_command whisper-server "Run scripts/setup_full_local_auto_host_macos.sh first."
-require_command docker "Open/install Docker Desktop, or run scripts/setup_full_local_auto_host_macos.sh first."
+if [[ ! -f "$KOKOCLONE_ENV" ]]; then
+  require_command docker "Open/install Docker Desktop, or run scripts/setup_full_local_auto_host_macos.sh first."
+fi
 
 if [[ ! -s "$WHISPER_MODEL_FILE" ]]; then
   echo "Whisper model was not found: $WHISPER_MODEL_FILE"
@@ -99,7 +101,7 @@ if ! curl -fsS "http://127.0.0.1:${STT_PORT}" >/dev/null 2>&1; then
 fi
 wait_for_url "http://127.0.0.1:${STT_PORT}" "whisper.cpp"
 
-if ! docker info >/dev/null 2>&1; then
+if [[ ! -f "$KOKOCLONE_ENV" ]] && ! docker info >/dev/null 2>&1; then
   echo "Docker Desktop is not running. Opening it now..."
   open -a Docker || true
   for _ in {1..90}; do
@@ -110,19 +112,19 @@ if ! docker info >/dev/null 2>&1; then
   done
 fi
 
-if ! docker info >/dev/null 2>&1; then
+if [[ ! -f "$KOKOCLONE_ENV" ]] && ! docker info >/dev/null 2>&1; then
   echo "Docker Desktop did not become ready. Open Docker Desktop, then rerun this script."
   exit 1
 fi
 
-if [[ -f "$VOICE_ENV" ]]; then
-  echo "Voice-clone addon is configured; starting cloned-voice TTS..."
-  "${SCRIPT_DIR}/start_voice_clone_auto_host_macos.sh"
-  source "$VOICE_ENV"
-  TTS_PORT="${JPARTY_VOICE_CLONE_PORT:-8890}"
-  TTS_URL="${JPARTY_VOICE_CLONE_URL:-http://localhost:${TTS_PORT}/v1}"
-  TTS_MODEL="${JPARTY_VOICE_CLONE_MODEL:-tts-1-hd}"
-  TTS_VOICE="${JPARTY_VOICE_CLONE_VOICE:-my_voice}"
+if [[ -f "$KOKOCLONE_ENV" ]]; then
+  echo "KokoClone addon is configured; starting cloned-voice TTS..."
+  "${SCRIPT_DIR}/voice_clone/start_kokoclone_auto_host_macos.sh"
+  source "$KOKOCLONE_ENV"
+  TTS_PORT="${JPARTY_KOKOCLONE_PORT:-8892}"
+  TTS_URL="${JPARTY_KOKOCLONE_URL:-http://localhost:${TTS_PORT}/v1}"
+  TTS_MODEL="${JPARTY_KOKOCLONE_MODEL:-kokoclone}"
+  TTS_VOICE="${JPARTY_KOKOCLONE_VOICE:-my_voice}"
 else
   if docker ps --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
     echo "Kokoro TTS is already running."
@@ -154,4 +156,4 @@ echo "Logs:"
 echo "  Ollama: /tmp/jparty-ollama.log"
 echo "  Whisper: /tmp/jparty-whisper-server.log"
 echo "  Kokoro: docker logs jparty-kokoro-tts"
-echo "  Voice clone: docker logs jparty-voice-clone-tts"
+echo "  KokoClone: /tmp/jparty-kokoclone-adapter.log"

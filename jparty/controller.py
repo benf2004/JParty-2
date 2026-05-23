@@ -138,6 +138,16 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
     def send(self, msg, text=""):
         data = {"message": msg, "text": text}
         try:
+            io_loop = getattr(self.application.controller, "io_loop", None)
+            if io_loop is None:
+                self._write_message_safe(data, msg)
+            else:
+                io_loop.add_callback(self._write_message_safe, data, msg)
+        except:
+            logging.error(f"Error scheduling message {msg}", exc_info=True)
+
+    def _write_message_safe(self, data, msg):
+        try:
             self.write_message(data)
             logging.info(f"Sent {data}")
         except:
@@ -248,6 +258,7 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
 class BuzzerController:
     def __init__(self, game):
         self.thread = None
+        self.io_loop = None
         self.game = game
         tornado.options.parse_command_line()
         self.app = Application(
@@ -273,12 +284,13 @@ class BuzzerController:
 
         self.start_https()
 
+        self.io_loop = tornado.ioloop.IOLoop.current()
         if threaded:
-            self.thread = Thread(target=tornado.ioloop.IOLoop.current().start)
+            self.thread = Thread(target=self.io_loop.start)
             self.thread.setDaemon(True)
             self.thread.start()
         else:
-            tornado.ioloop.IOLoop.current().start()
+            self.io_loop.start()
 
     def restart(self):
         for p in self.connected_players:

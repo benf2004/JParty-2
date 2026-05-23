@@ -5,3 +5,4 @@ latest.log
 dist**
 .idea/**
 .DS_Store
+voice_sample.m4a

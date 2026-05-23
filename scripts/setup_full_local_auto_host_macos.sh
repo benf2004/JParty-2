@@ -21,7 +21,7 @@ Set up a fully local beginner Auto Host stack on macOS:
   - Ollama local LLM for clue parsing and answer judging
   - whisper.cpp local Whisper server for speech-to-text
   - Kokoro local TTS server for text-to-speech
-  - optional XTTS voice-clone addon
+  - optional KokoClone clone TTS addon
 
 Usage:
   scripts/setup_full_local_auto_host_macos.sh
@@ -97,11 +97,23 @@ if [[ "$(uname -m)" != "arm64" ]]; then
   echo "Warning: this Mac is not Apple Silicon. Local models may be slower."
 fi
 
+ENABLE_VOICE_CLONE="${JPARTY_ENABLE_VOICE_CLONE:-ask}"
+if [[ "$ENABLE_VOICE_CLONE" == "ask" ]]; then
+  read -r -p "Would you like to set up KokoClone voice cloning for your own host voice? [y/N] " clone_answer
+  if [[ "$clone_answer" =~ ^[Yy]$ ]]; then
+    ENABLE_VOICE_CLONE="yes"
+  else
+    ENABLE_VOICE_CLONE="no"
+  fi
+fi
+
 install_homebrew_if_needed
 install_brew_package_if_needed ollama ollama
 install_brew_package_if_needed ffmpeg ffmpeg
 install_brew_package_if_needed whisper-server whisper-cpp
-install_brew_cask_if_needed "/Applications/Docker.app" docker
+if [[ ! "$ENABLE_VOICE_CLONE" =~ ^(yes|true|1)$ ]]; then
+  install_brew_cask_if_needed "/Applications/Docker.app" docker
+fi
 
 mkdir -p "${APP_SUPPORT}/models"
 
@@ -136,51 +148,41 @@ if ! curl -fsS "http://127.0.0.1:${STT_PORT}" >/dev/null 2>&1; then
 fi
 wait_for_url "http://127.0.0.1:${STT_PORT}" "whisper.cpp"
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker command was not found after installing Docker Desktop."
-  echo "Open Docker Desktop once, finish its setup, then rerun this script."
-  exit 1
-fi
-
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker Desktop is not running. Opening it now..."
-  open -a Docker || true
-  echo "Waiting for Docker Desktop to start. This can take a minute the first time."
-  for _ in {1..90}; do
-    if docker info >/dev/null 2>&1; then
-      break
-    fi
-    sleep 2
-  done
-fi
-
-if ! docker info >/dev/null 2>&1; then
-  echo "Docker Desktop did not become ready."
-  echo "Open Docker Desktop, finish any first-run prompts, then rerun this script."
-  exit 1
-fi
-
-ENABLE_VOICE_CLONE="${JPARTY_ENABLE_VOICE_CLONE:-ask}"
-if [[ "$ENABLE_VOICE_CLONE" == "ask" ]]; then
-  read -r -p "Would you like to set up voice cloning for your own host voice? [y/N] " clone_answer
-  if [[ "$clone_answer" =~ ^[Yy]$ ]]; then
-    ENABLE_VOICE_CLONE="yes"
-  else
-    ENABLE_VOICE_CLONE="no"
-  fi
-fi
-
 if [[ "$ENABLE_VOICE_CLONE" =~ ^(yes|true|1)$ ]]; then
-  "${SCRIPT_DIR}/setup_voice_clone_auto_host_macos.sh"
-  VOICE_ENV="${APP_SUPPORT}/voice-clone/voice-clone.env"
+  "${SCRIPT_DIR}/voice_clone/setup_kokoclone_auto_host_macos.sh"
+  VOICE_ENV="${APP_SUPPORT}/kokoclone/kokoclone.env"
   if [[ -f "$VOICE_ENV" ]]; then
     source "$VOICE_ENV"
-    TTS_PORT="${JPARTY_VOICE_CLONE_PORT:-8890}"
-    TTS_URL="${JPARTY_VOICE_CLONE_URL:-http://localhost:${TTS_PORT}/v1}"
-    TTS_MODEL="${JPARTY_VOICE_CLONE_MODEL:-tts-1-hd}"
-    TTS_VOICE="${JPARTY_VOICE_CLONE_VOICE:-my_voice}"
+    TTS_PORT="${JPARTY_KOKOCLONE_PORT:-8892}"
+    TTS_URL="${JPARTY_KOKOCLONE_URL:-http://localhost:${TTS_PORT}/v1}"
+    TTS_MODEL="${JPARTY_KOKOCLONE_MODEL:-kokoclone}"
+    TTS_VOICE="${JPARTY_KOKOCLONE_VOICE:-my_voice}"
   fi
 else
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker command was not found after installing Docker Desktop."
+    echo "Open Docker Desktop once, finish its setup, then rerun this script."
+    exit 1
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker Desktop is not running. Opening it now..."
+    open -a Docker || true
+    echo "Waiting for Docker Desktop to start. This can take a minute the first time."
+    for _ in {1..90}; do
+      if docker info >/dev/null 2>&1; then
+        break
+      fi
+      sleep 2
+    done
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker Desktop did not become ready."
+    echo "Open Docker Desktop, finish any first-run prompts, then rerun this script."
+    exit 1
+  fi
+
   if docker ps --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
     echo "Kokoro TTS container is already running."
   elif docker ps -a --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
@@ -213,9 +215,10 @@ echo "Logs:"
 echo "  Ollama: /tmp/jparty-ollama.log"
 echo "  Whisper: /tmp/jparty-whisper-server.log"
 echo "  TTS: docker logs jparty-kokoro-tts"
-echo "  Voice clone: docker logs jparty-voice-clone-tts"
+echo "  KokoClone: /tmp/jparty-kokoclone-adapter.log"
 echo
 echo "To stop the background services later:"
 echo "  pkill -f 'ollama serve'"
 echo "  pkill -f 'whisper-server'"
 echo "  docker stop jparty-kokoro-tts"
+echo "  scripts/voice_clone.sh stop-kokoclone"

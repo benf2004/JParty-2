@@ -2,7 +2,7 @@
 
 This optional addon lets Auto Host use a local cloned voice instead of Kokoro.
 
-The current addon uses `openedai-speech`, an OpenAI-compatible XTTS server. Treat it as experimental: Kokoro is still the reliable fallback if cloned voice generation is slow or glitchy.
+The addon uses KokoClone through a tiny local adapter that exposes JParty's OpenAI-style `/v1/audio/speech` endpoint. It runs from a local Python 3.12 environment.
 
 The addon uses a local OpenAI-compatible TTS server, so JParty's flow stays the same:
 
@@ -28,36 +28,37 @@ Record a clean 20-60 second clip of your own voice. Tips:
 
 ## Install The Addon
 
-After the full local Auto Host setup has installed Docker and ffmpeg, run:
+After the full local Auto Host setup has installed ffmpeg, run:
 
 ```bash
-scripts/setup_voice_clone_auto_host_macos.sh
+scripts/voice_clone.sh setup-kokoclone
 ```
 
 Or pass the sample path directly:
 
 ```bash
-JPARTY_VOICE_SAMPLE=/path/to/my-voice.m4a scripts/setup_voice_clone_auto_host_macos.sh
+JPARTY_VOICE_SAMPLE=/path/to/my-voice.m4a scripts/voice_clone.sh setup-kokoclone
 ```
 
-The script converts the sample to the right WAV format, starts the local voice-clone server, and prints JParty settings.
+The script converts the sample to the right WAV format, installs KokoClone in its own environment, starts the local voice-clone adapter, and prints JParty settings.
 
 ## JParty Settings
 
 Use these settings after setup:
 
 ```text
-Local TTS URL: http://localhost:8890/v1
-Local TTS model: tts-1-hd
+Local TTS: KokoClone cloned voice
+Local TTS URL: http://localhost:8892/v1
+Local TTS model: kokoclone
 Local TTS voice: my_voice
 ```
 
-In JParty Settings, the `Local TTS voice` control is editable. If your cloned voice name is not in the Kokoro dropdown, type the voice name directly.
+In JParty Settings, choose `KokoClone cloned voice` from the `Local TTS` dropdown.
 
 If you choose a custom voice name:
 
 ```bash
-JPARTY_VOICE_CLONE_NAME=ben JPARTY_VOICE_SAMPLE=/path/to/ben.wav scripts/setup_voice_clone_auto_host_macos.sh
+JPARTY_KOKOCLONE_VOICE_NAME=ben JPARTY_VOICE_SAMPLE=/path/to/ben.wav scripts/voice_clone.sh setup-kokoclone
 ```
 
 then set:
@@ -83,8 +84,8 @@ scripts/stop_full_local_auto_host_macos.sh
 You can also start or stop only the voice-clone addon:
 
 ```bash
-scripts/start_voice_clone_auto_host_macos.sh
-scripts/stop_voice_clone_auto_host_macos.sh
+scripts/voice_clone.sh start-kokoclone
+scripts/voice_clone.sh stop-kokoclone
 ```
 
 ## Fallback

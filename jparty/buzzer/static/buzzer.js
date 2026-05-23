@@ -23,6 +23,7 @@ async function buzz() {
 }
 
 var current_page = "";
+var disputeCountdownTimer = null;
 window.auto_host_enabled = true;
 function load_page(pagename) {
     console.log("loading page "+pagename);
@@ -84,11 +85,19 @@ function wagerForm(form) {
     }
     return false;
 }
-function answerForm() {
-    var answer = $("input[name='answer']").val();
+function answerForm(form) {
+    var scope = form ? $(form) : $("form.answer_form:visible").first();
+    if (!scope.length) {
+        scope = $("form.answer_form").first();
+    }
+    var answer = scope.find("input[name='answer']").val();
     send("ANSWER",answer);
     document.activeElement.blur();
-    load_page(null);
+    if (scope.closest("#buzz-answer-panel").length) {
+        $("#answer-record-status").text("Judging...");
+    } else {
+        load_page(null);
+    }
     return false;
 }
 
@@ -149,6 +158,10 @@ function setAutoHostState(payload) {
 }
 
 function openDisputeVote(payload) {
+    if (disputeCountdownTimer) {
+        clearInterval(disputeCountdownTimer);
+        disputeCountdownTimer = null;
+    }
     $("#dispute-text").text(payload.message || "Vote on the last clue");
     var options = $("#dispute-options");
     options.empty();
@@ -159,12 +172,23 @@ function openDisputeVote(payload) {
             .on("click", function() { disputeVote(option.id); })
             .appendTo(options);
     });
-    $("#dispute-status").text("30 seconds to vote");
+    var secondsRemaining = Number(payload.seconds_remaining || 30);
+    function renderDisputeCountdown() {
+        $("#dispute-status").text(secondsRemaining + " seconds to vote");
+        secondsRemaining -= 1;
+        if (secondsRemaining < 0 && disputeCountdownTimer) {
+            clearInterval(disputeCountdownTimer);
+            disputeCountdownTimer = null;
+        }
+    }
+    renderDisputeCountdown();
+    disputeCountdownTimer = setInterval(renderDisputeCountdown, 1000);
     load_page("dispute");
 }
 
 function setAutoHostPayload(payload) {
     if (!payload) {
+        resetBuzzAnswerPanel();
         return;
     }
     if (payload.categories && payload.clues) {
@@ -172,6 +196,13 @@ function setAutoHostPayload(payload) {
     }
     if (payload.max_wager !== undefined) {
         set_max_wager(payload.max_wager);
+    }
+    if (payload.answer_state === "waiting") {
+        showBuzzAnswerWait(payload);
+    } else if (payload.answer_state === "ready") {
+        showBuzzAnswerReady(payload);
+    } else {
+        resetBuzzAnswerPanel();
     }
 }
 
@@ -189,6 +220,24 @@ function setAnswerRecordPrompt(payload) {
     }
     $("#answer-record-prompt").text(prompt);
     $("#answer-record-status").text("");
+}
+
+function resetBuzzAnswerPanel() {
+    $("#buzz-answer-panel").hide().removeClass("waiting ready");
+    $("#buzz-answer-controls").show();
+    $("#answer-record-status").removeClass("active").text("");
+    $("#answer-record-prompt").text("Record your answer");
+}
+
+function showBuzzAnswerWait(payload) {
+    setAnswerRecordPrompt(payload || {prompt: "Wait to talk..."});
+    $("#buzz-answer-panel").show().removeClass("ready").addClass("waiting");
+}
+
+function showBuzzAnswerReady(payload) {
+    setAnswerRecordPrompt(payload);
+    $("#buzz-answer-panel").show().removeClass("waiting").addClass("ready");
+    $("#buzz-answer-controls").show();
 }
 
 function autoHostStatus(purpose) {
@@ -269,7 +318,7 @@ async function recordAutoHostAudio(purpose) {
             if (recorder.state === "recording") {
                 recorder.stop();
             }
-        }, purpose === "answer" ? 5500 : (purpose === "daily_double_wager" ? 4500 : 3500));
+        }, purpose === "answer" ? 4500 : (purpose === "daily_double_wager" ? 4500 : 3500));
     } catch (err) {
         console.log(err);
         status.removeClass("active");
@@ -474,8 +523,8 @@ var updater = {
                     setTimeout(function() { recordAutoHostAudio("clue_selection"); }, autoHostAutoStartDelay(selectPayload, 800));
                     break;
                 case "PROMPT_RECORD_ANSWER":
-                    setAnswerRecordPrompt(JSON.parse(jsondata.text || "{}"));
-                    load_page("record_answer");
+                    showBuzzAnswerReady(JSON.parse(jsondata.text || "{}"));
+                    load_page("buzz");
                     break;
                 case "PROMPT_DD_WAGER":
                     set_max_wager(jsondata.text);
@@ -483,6 +532,7 @@ var updater = {
                     load_page("dd_wager");
                     break;
                 case "PROMPT_BUZZ":
+                    resetBuzzAnswerPanel();
                     load_page("buzz");
                     break;
                 case "AUTO_HOST_CONTROLS":
@@ -500,6 +550,10 @@ var updater = {
                     openDisputeVote(JSON.parse(jsondata.text || "{}"));
                     break;
                 case "DISPUTE_RESULT":
+                    if (disputeCountdownTimer) {
+                        clearInterval(disputeCountdownTimer);
+                        disputeCountdownTimer = null;
+                    }
                     $("#dispute-status").text(jsondata.text);
                     setTimeout(function() { load_page("buzz"); }, 1800);
                     break;
@@ -510,12 +564,17 @@ var updater = {
                     var judgement = JSON.parse(jsondata.text);
                     $("#judgement-text").text(judgement.verdict.toUpperCase());
                     $("#judgement-reason").text(judgement.transcript);
+                    resetBuzzAnswerPanel();
                     load_page("judgement");
                     setTimeout(function() { load_page("buzz"); }, 1800);
                     break;
+                case "PROMPT_WAIT_ANSWER":
+                    showBuzzAnswerWait(JSON.parse(jsondata.text || "{}"));
+                    load_page("buzz");
+                    break;
                 case "PROMPT_RECORD_ANSWER_AUTO":
-                    setAnswerRecordPrompt(JSON.parse(jsondata.text || "{}"));
-                    load_page("record_answer");
+                    showBuzzAnswerReady(JSON.parse(jsondata.text || "{}"));
+                    load_page("buzz");
                     setTimeout(function() { recordAutoHostAudio("answer"); }, 300);
                     break;
                 case "CHALLENGE_OPEN":
@@ -531,7 +590,7 @@ var updater = {
                         $("#recording-status").removeClass("active").text(jsondata.text);
                     } else if (current_page === "dd_wager") {
                         $("#dd-wager-status").removeClass("active").text(jsondata.text);
-                    } else if (current_page === "record_answer") {
+                    } else if ($("#buzz-answer-panel").is(":visible")) {
                         $("#answer-record-status").removeClass("active").text(jsondata.text);
                     } else {
                         console.log(jsondata.text);
@@ -541,6 +600,3 @@ var updater = {
         }
     }
 };
-
-
-

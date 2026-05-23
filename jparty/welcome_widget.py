@@ -56,6 +56,33 @@ AUTO_HOST_VOICE_OPTIONS = [
     ("cedar", "Masculine, best quality"),
 ]
 
+KOKORO_VOICE_OPTIONS = [
+    ("af_heart", "Feminine, warm and expressive"),
+    ("af_alloy", "Feminine, balanced and clear"),
+    ("af_aoede", "Feminine, bright and polished"),
+    ("af_bella", "Feminine, lively and upbeat"),
+    ("af_jessica", "Feminine, friendly and crisp"),
+    ("af_kore", "Feminine, calm and steady"),
+    ("af_nicole", "Feminine, soft and composed"),
+    ("af_nova", "Feminine, energetic and modern"),
+    ("af_river", "Feminine, smooth and conversational"),
+    ("af_sarah", "Feminine, natural and clear"),
+    ("af_sky", "Feminine, light and casual"),
+    ("am_adam", "Masculine, deep and direct"),
+    ("am_echo", "Masculine, warm and clear"),
+    ("am_eric", "Masculine, neutral and steady"),
+    ("am_fenrir", "Masculine, bold and animated"),
+    ("am_liam", "Masculine, relaxed and friendly"),
+    ("am_michael", "Masculine, polished and confident"),
+    ("am_onyx", "Masculine, low and resonant"),
+    ("am_puck", "Masculine, playful and lively"),
+    ("am_santa", "Masculine, character voice"),
+    ("bf_emma", "British feminine, clear and refined"),
+    ("bf_isabella", "British feminine, warm and elegant"),
+    ("bm_george", "British masculine, classic and clear"),
+    ("bm_lewis", "British masculine, smooth and composed"),
+]
+
 
 class Image(qrcode.image.base.BaseImage):
     """QR code image widget"""
@@ -687,6 +714,94 @@ class SettingsMenu(QDialog):
         openai_key_layout.addWidget(openai_key_label)
         openai_key_layout.addWidget(self.openai_api_key_input)
 
+        self.local_auto_host_widgets = []
+
+        local_llm_url_label = QLabel("Local LLM URL:", self)
+        self.local_llm_url_input = QLineEdit(self)
+        self.local_llm_url_input.setText(current_auto_host.get('local_llm_base_url', DEFAULT_CONFIG['auto_host']['local_llm_base_url']))
+        self.local_llm_url_input.setPlaceholderText("http://localhost:11434/v1")
+        local_llm_url_layout = QHBoxLayout()
+        local_llm_url_layout.addWidget(local_llm_url_label)
+        local_llm_url_layout.addWidget(self.local_llm_url_input)
+
+        local_llm_model_label = QLabel("Local LLM model:", self)
+        self.local_llm_model_input = QLineEdit(self)
+        self.local_llm_model_input.setText(current_auto_host.get('local_llm_model', DEFAULT_CONFIG['auto_host']['local_llm_model']))
+        self.local_llm_model_input.setPlaceholderText("qwen2.5:7b")
+        local_llm_model_layout = QHBoxLayout()
+        local_llm_model_layout.addWidget(local_llm_model_label)
+        local_llm_model_layout.addWidget(self.local_llm_model_input)
+
+        local_stt_url_label = QLabel("Local STT URL:", self)
+        self.local_stt_url_input = QLineEdit(self)
+        self.local_stt_url_input.setText(current_auto_host.get('local_stt_base_url', DEFAULT_CONFIG['auto_host']['local_stt_base_url']))
+        self.local_stt_url_input.setPlaceholderText("http://localhost:8082/v1")
+        local_stt_url_layout = QHBoxLayout()
+        local_stt_url_layout.addWidget(local_stt_url_label)
+        local_stt_url_layout.addWidget(self.local_stt_url_input)
+
+        local_stt_model_label = QLabel("Local STT model:", self)
+        self.local_stt_model_input = QLineEdit(self)
+        self.local_stt_model_input.setText(current_auto_host.get('local_stt_model', DEFAULT_CONFIG['auto_host']['local_stt_model']))
+        self.local_stt_model_input.setPlaceholderText("whisper")
+        local_stt_model_layout = QHBoxLayout()
+        local_stt_model_layout.addWidget(local_stt_model_label)
+        local_stt_model_layout.addWidget(self.local_stt_model_input)
+
+        local_tts_url_label = QLabel("Local TTS URL:", self)
+        self.local_tts_url_input = QLineEdit(self)
+        self.local_tts_url_input.setText(current_auto_host.get('local_tts_base_url', DEFAULT_CONFIG['auto_host']['local_tts_base_url']))
+        self.local_tts_url_input.setPlaceholderText("http://localhost:8880/v1")
+        local_tts_url_layout = QHBoxLayout()
+        local_tts_url_layout.addWidget(local_tts_url_label)
+        local_tts_url_layout.addWidget(self.local_tts_url_input)
+
+        local_tts_model_label = QLabel("Local TTS model:", self)
+        self.local_tts_model_input = QLineEdit(self)
+        self.local_tts_model_input.setText(current_auto_host.get('local_tts_model', DEFAULT_CONFIG['auto_host']['local_tts_model']))
+        self.local_tts_model_input.setPlaceholderText("kokoro")
+        local_tts_model_layout = QHBoxLayout()
+        local_tts_model_layout.addWidget(local_tts_model_label)
+        local_tts_model_layout.addWidget(self.local_tts_model_input)
+
+        local_tts_voice_label = QLabel("Local TTS voice:", self)
+        self.local_tts_voice_combobox = QComboBox(self)
+        self.local_tts_voice_combobox.setEditable(True)
+        for voice, description in KOKORO_VOICE_OPTIONS:
+            self.local_tts_voice_combobox.addItem(f"{voice} - {description}", voice)
+        current_local_voice = current_auto_host.get('local_tts_voice', DEFAULT_CONFIG['auto_host']['local_tts_voice'])
+        current_local_voice_index = self.local_tts_voice_combobox.findData(current_local_voice)
+        if current_local_voice_index < 0:
+            self.local_tts_voice_combobox.addItem(f"{current_local_voice} - Custom configured voice", current_local_voice)
+            current_local_voice_index = self.local_tts_voice_combobox.findData(current_local_voice)
+        self.local_tts_voice_combobox.setCurrentIndex(max(0, current_local_voice_index))
+        local_tts_voice_layout = QHBoxLayout()
+        local_tts_voice_layout.addWidget(local_tts_voice_label)
+        local_tts_voice_layout.addWidget(self.local_tts_voice_combobox)
+
+        local_hint = QLabel("Local mode expects already-running OpenAI-compatible services. Use AUTOHOST.md or scripts/setup_local_auto_host_macos.sh to get started.", self)
+        local_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        local_hint.setWordWrap(True)
+        local_hint.setPalette(hint_palette)
+
+        self.local_auto_host_widgets.extend([
+            local_llm_url_label,
+            self.local_llm_url_input,
+            local_llm_model_label,
+            self.local_llm_model_input,
+            local_stt_url_label,
+            self.local_stt_url_input,
+            local_stt_model_label,
+            self.local_stt_model_input,
+            local_tts_url_label,
+            self.local_tts_url_input,
+            local_tts_model_label,
+            self.local_tts_model_input,
+            local_tts_voice_label,
+            self.local_tts_voice_combobox,
+            local_hint,
+        ])
+
         # Add the horizontal layouts to the main layout
         layout.addLayout(settings_info_layout)
         layout.addSpacing(20)
@@ -701,6 +816,16 @@ class SettingsMenu(QDialog):
         layout.addLayout(auto_host_voice_layout)
         layout.addLayout(openai_key_layout)
         layout.addWidget(openai_key_hint)
+        layout.addLayout(local_llm_url_layout)
+        layout.addLayout(local_llm_model_layout)
+        layout.addLayout(local_stt_url_layout)
+        layout.addLayout(local_stt_model_layout)
+        layout.addLayout(local_tts_url_layout)
+        layout.addLayout(local_tts_model_layout)
+        layout.addLayout(local_tts_voice_layout)
+        layout.addWidget(local_hint)
+        self.auto_host_provider_combobox.currentTextChanged.connect(self.update_auto_host_provider_fields)
+        self.update_auto_host_provider_fields(self.auto_host_provider_combobox.currentText())
 
         # Add space before the Apply button
         layout.addSpacing(10)
@@ -725,6 +850,11 @@ class SettingsMenu(QDialog):
                 widget.setFont(font)
 
         self.setLayout(layout)
+
+    def update_auto_host_provider_fields(self, provider):
+        is_local = provider == "local"
+        for widget in getattr(self, "local_auto_host_widgets", []):
+            widget.setVisible(is_local)
 
     def save_settings(self):
         logging.info("save_settings method called")  # Debugging line
@@ -761,6 +891,16 @@ class SettingsMenu(QDialog):
         auto_host['ai_provider'] = self.auto_host_provider_combobox.currentText()
         auto_host['openai_api_key'] = self.openai_api_key_input.text().strip()
         auto_host['tts_voice'] = self.auto_host_voice_combobox.currentData() or 'coral'
+        auto_host['local_llm_base_url'] = self.local_llm_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_base_url']
+        auto_host['local_llm_model'] = self.local_llm_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_model']
+        auto_host['local_stt_base_url'] = self.local_stt_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_base_url']
+        auto_host['local_stt_model'] = self.local_stt_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_model']
+        auto_host['local_tts_base_url'] = self.local_tts_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_base_url']
+        auto_host['local_tts_model'] = self.local_tts_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_model']
+        auto_host['local_tts_voice'] = (
+            self.local_tts_voice_combobox.currentText().split(" - ", 1)[0].strip()
+            or DEFAULT_CONFIG['auto_host']['local_tts_voice']
+        )
         auto_host['selection_mode'] = 'voice_with_gui_fallback'
         auto_host['answer_judging'] = 'auto_with_challenge'
         auto_host['leniency'] = self.auto_host_leniency_combobox.currentText()

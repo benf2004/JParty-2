@@ -25,6 +25,13 @@ DEFAULT_AUTO_HOST_CONFIG = {
     "enabled": False,
     "ai_provider": "openai",
     "tts_voice": "coral",
+    "local_llm_base_url": "http://localhost:11434/v1",
+    "local_llm_model": "qwen2.5:7b",
+    "local_stt_base_url": "http://localhost:8082/v1",
+    "local_stt_model": "whisper",
+    "local_tts_base_url": "http://localhost:8880/v1",
+    "local_tts_model": "kokoro",
+    "local_tts_voice": "af_heart",
     "selection_mode": "voice_with_gui_fallback",
     "answer_judging": "auto_with_challenge",
     "leniency": "normal",
@@ -71,7 +78,8 @@ class Judgement:
 
 class AutoHostAI:
     def __init__(self, config):
-        self.config = config or DEFAULT_AUTO_HOST_CONFIG.copy()
+        self.config = DEFAULT_AUTO_HOST_CONFIG.copy()
+        self.config.update(config or {})
         self.provider = self.config.get("ai_provider", "openai")
 
     def api_key(self):
@@ -87,6 +95,11 @@ class AutoHostAI:
                 logging.error("Auto Host OpenAI transcription requires the requests package")
                 return ""
             return self._openai_transcribe(audio_bytes, mime_type, api_key)
+        if self.provider == "local":
+            if requests is None:
+                logging.error("Auto Host local transcription requires the requests package")
+                return ""
+            return self._local_transcribe(audio_bytes, mime_type)
 
         logging.info("Auto Host transcription skipped because no provider/API key is configured")
         return ""
@@ -108,6 +121,13 @@ class AutoHostAI:
             parsed = self._openai_parse_clue(transcript, board, api_key)
             if parsed is not None:
                 return parsed
+        if self.provider == "local":
+            if requests is None:
+                logging.error("Auto Host local clue parsing requires the requests package")
+                return None
+            parsed = self._local_parse_clue(transcript, board)
+            if parsed is not None:
+                return parsed
 
         return None
 
@@ -119,9 +139,9 @@ class AutoHostAI:
         fast_judgement = self._fast_judge_answer(clue, transcript)
         if fast_judgement is not None:
             return fast_judgement
-        obvious_judgement = self._obvious_judge_answer(clue, transcript)
-        if obvious_judgement is not None:
-            return obvious_judgement
+        fast_rejection = self._fast_reject_answer(clue, transcript)
+        if fast_rejection is not None:
+            return fast_rejection
 
         api_key = self.api_key()
         if self.provider == "openai" and api_key:
@@ -131,13 +151,26 @@ class AutoHostAI:
             judged = self._openai_judge_answer(clue, transcript, leniency, api_key)
             if judged is not None:
                 return judged
+        if self.provider == "local":
+            if requests is None:
+                logging.error("Auto Host local answer judging requires the requests package")
+                return self._heuristic_judge_answer(clue, transcript)
+            judged = self._local_judge_answer(clue, transcript, leniency)
+            if judged is not None:
+                return judged
 
         return self._heuristic_judge_answer(clue, transcript)
 
     def speech_file(self, text, purpose="host"):
         text = (text or "").strip()
         api_key = self.api_key()
-        if not text or self.provider != "openai" or not api_key or requests is None:
+        if not text or requests is None:
+            return None
+
+        if self.provider == "local":
+            return self._local_speech_file(text, purpose)
+
+        if self.provider != "openai" or not api_key:
             return None
 
         voice = self.config.get("tts_voice", "coral")
@@ -195,6 +228,28 @@ class AutoHostAI:
         response.raise_for_status()
         data = response.json()
         return data.get("text", "").strip()
+
+    def _local_transcribe(self, audio_bytes, mime_type):
+        suffix = self._suffix_for_mime(mime_type)
+        base_url = self._normalize_base_url(self.config.get("local_stt_base_url"))
+        model = self.config.get("local_stt_model", "whisper")
+        try:
+            with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+                tmp.write(audio_bytes)
+                tmp.flush()
+                tmp.seek(0)
+                response = requests.post(
+                    f"{base_url}/audio/transcriptions",
+                    data={"model": model},
+                    files={"file": (f"audio{suffix}", tmp, mime_type or "application/octet-stream")},
+                    timeout=float(os.environ.get("JPARTY_LOCAL_STT_TIMEOUT", "30")),
+                )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("text", "").strip()
+        except Exception:
+            logging.exception("Auto Host local transcription failed")
+            return ""
 
     def _openai_parse_clue(self, transcript, board, api_key):
         schema = {
@@ -269,6 +324,95 @@ class AutoHostAI:
             transcript,
         )
 
+    def _local_parse_clue(self, transcript, board):
+        categories = [{"index": i, "name": c} for i, c in enumerate(board.categories)]
+        prompt = (
+            "Return only JSON for the selected Jeopardy clue. "
+            "Use this exact shape: {\"category_index\": 0, \"value\": 200, \"needs_gui\": false}. "
+            "If the spoken request is ambiguous, set needs_gui true.\n"
+            f"Categories: {json.dumps(categories)}\n"
+            f"Available values: {sorted({q.value for q in board.questions if not q.complete})}\n"
+            f"Spoken request: {transcript}"
+        )
+        data = self._local_chat_json(prompt, timeout=float(os.environ.get("JPARTY_LOCAL_CLUE_PARSE_TIMEOUT", "12")))
+        if not data or data.get("needs_gui"):
+            return None
+        return self._clue_by_category_value(board, data.get("category_index"), data.get("value"))
+
+    def _local_judge_answer(self, clue, transcript, leniency):
+        prompt = (
+            "You are judging a Jeopardy answer. Return only JSON with this exact shape: "
+            "{\"is_correct\": true, \"confidence\": 0.0, \"reason\": \"short reason\"}. "
+            "Be fair, account for wording variants, and apply this leniency level: "
+            f"{leniency}.\nClue: {clue.text}\nExpected answer: {clue.answer}\n"
+            f"Player answer transcript: {transcript}"
+        )
+        data = self._local_chat_json(prompt, timeout=float(os.environ.get("JPARTY_LOCAL_JUDGE_TIMEOUT", "20")))
+        if not data:
+            return None
+        return Judgement(
+            bool(data.get("is_correct")),
+            float(data.get("confidence", 0.0)),
+            str(data.get("reason", "")).strip(),
+            transcript,
+        )
+
+    def _local_chat_json(self, prompt, timeout=30):
+        try:
+            base_url = self._normalize_base_url(self.config.get("local_llm_base_url"))
+            model = self.config.get("local_llm_model", "qwen2.5:7b")
+            response = requests.post(
+                f"{base_url}/chat/completions",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0,
+                },
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"]
+            return self._parse_json_object(content)
+        except Exception:
+            logging.exception("Auto Host local structured request failed")
+            return None
+
+    def _local_speech_file(self, text, purpose):
+        voice = self.config.get("local_tts_voice", "af_heart")
+        model = self.config.get("local_tts_model", "kokoro")
+        base_url = self._normalize_base_url(self.config.get("local_tts_base_url"))
+        cache_dir = os.path.join(user_data_dir, "auto_host_audio_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_key = hashlib.sha256(
+            f"local|{base_url}|{model}|{voice}|{purpose}|{text}".encode("utf-8")
+        ).hexdigest()
+        path = os.path.join(cache_dir, f"{cache_key}.wav")
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
+        try:
+            response = requests.post(
+                f"{base_url}/audio/speech",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "voice": voice,
+                    "input": text,
+                    "response_format": "wav",
+                    "speed": 1.3,
+                },
+                timeout=float(os.environ.get("JPARTY_LOCAL_TTS_TIMEOUT", "45")),
+            )
+            response.raise_for_status()
+            tmp_path = path + ".tmp"
+            with open(tmp_path, "wb") as audio_file:
+                audio_file.write(response.content)
+            os.replace(tmp_path, path)
+            return path
+        except Exception:
+            logging.exception("Auto Host local TTS generation failed")
+            return None
+
     def _openai_json(self, prompt, response_format, api_key, timeout=30):
         try:
             model = os.environ.get("JPARTY_JUDGE_MODEL", "gpt-5-nano")
@@ -294,6 +438,24 @@ class AutoHostAI:
         except Exception:
             logging.exception("Auto Host OpenAI structured request failed")
             return None
+
+    def _parse_json_object(self, content):
+        content = (content or "").strip()
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+        start = content.find("{")
+        end = content.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        try:
+            return json.loads(content[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+
+    def _normalize_base_url(self, base_url):
+        return (base_url or "").rstrip("/")
 
     def _heuristic_parse_clue(self, transcript, board):
         text = self._normalize(transcript)
@@ -393,11 +555,11 @@ class AutoHostAI:
             return Judgement(True, 0.98, "Fast match to expected answer.", transcript)
         return None
 
-    def _obvious_judge_answer(self, clue, transcript):
+    def _fast_reject_answer(self, clue, transcript):
         expected = self._normalize_answer(clue.answer)
         given = self._normalize_answer(transcript)
         if not expected or not given:
-            return Judgement(False, 0.0, "No answer was captured.", transcript)
+            return None
 
         ratio = SequenceMatcher(None, expected, given).ratio()
         shared_words = set(expected.split()) & set(given.split())
@@ -470,8 +632,11 @@ class AutoHostController:
         self.ai = AutoHostAI(self.config)
 
     def on_new_player(self, player):
-        if self.enabled and self.player_in_control is None:
+        if not self.enabled:
+            return
+        if self.player_in_control is None:
             self.set_player_in_control(player)
+        self.preload_buzz_acknowledgement(player)
 
     def on_game_started(self):
         self.refresh_config()
@@ -482,6 +647,8 @@ class AutoHostController:
         if self.player_in_control not in self.game.players:
             self.set_player_in_control(self.game.players[0])
         self.preload_round_audio(self.game.current_round)
+        for player in self.game.players:
+            self.preload_buzz_acknowledgement(player)
         self.play_intro_then_prompt()
 
     def after_back_to_board(self):
@@ -515,9 +682,15 @@ class AutoHostController:
         player.page = "select"
         player.auto_payload = payload
         player.waiter.send("PROMPT_SELECT_CLUE", json.dumps(payload))
+        for other_player in self.game.players:
+            if other_player is not player and other_player.waiter:
+                other_player.waiter.send(
+                    "AUTO_HOST_CONTROLS",
+                    json.dumps({"can_dispute": self.can_request_dispute()}),
+                )
         player.waiter.send(
             "AUTO_HOST_CONTROLS",
-            json.dumps({"can_dispute": self.last_resolved_clue is not None}),
+            json.dumps({"can_dispute": self.can_request_dispute()}),
         )
 
     def board_payload(self):
@@ -541,6 +714,9 @@ class AutoHostController:
         clue = self.game.current_round.get_question(int(category_index), int(row))
         if clue is not None and not clue.complete:
             self.last_resolved_clue = None
+            for player in self.game.players:
+                if player.waiter:
+                    player.waiter.send("AUTO_HOST_CONTROLS", json.dumps({"can_dispute": False}))
             self.send_all_to_buzz()
             self.game.load_question(clue)
 
@@ -554,7 +730,7 @@ class AutoHostController:
                 player.waiter.send("PROMPT_BUZZ")
                 player.waiter.send(
                     "AUTO_HOST_CONTROLS",
-                    json.dumps({"can_dispute": self.last_resolved_clue is not None}),
+                    json.dumps({"can_dispute": self.can_request_dispute()}),
                 )
 
     def on_clue_loaded(self, clue):
@@ -567,6 +743,15 @@ class AutoHostController:
         if not self.enabled or board is None:
             return
         threading.Thread(target=self._preload_round_audio, args=(board,), daemon=True).start()
+
+    def preload_buzz_acknowledgement(self, player):
+        if not self.enabled or player is None:
+            return
+        threading.Thread(
+            target=self.ai.speech_file,
+            args=(self.buzz_acknowledgement_text(player), f"buzz-{self._player_name(player)}"),
+            daemon=True,
+        ).start()
 
     def play_intro_then_prompt(self):
         threading.Thread(target=self._play_intro_then_prompt, daemon=True).start()
@@ -724,17 +909,14 @@ class AutoHostController:
             "answer": clue.answer,
             "value": clue.value,
             "awarded_player": awarded_player,
+            "was_correct": awarded_player is not None,
         }
 
     def request_dispute(self, player):
         if (
-            not self.enabled
-            or self.dispute_open
-            or not self.last_resolved_clue
-            or self.game.active_question is not None
+            not self.can_request_dispute()
+            or player not in self.game.players
         ):
-            return
-        if player not in self.game.players:
             return
         if self.dispute_counts.get(player, 0) >= 5:
             if player.waiter:
@@ -746,11 +928,7 @@ class AutoHostController:
         self.dispute_counts[player] = self.dispute_counts.get(player, 0) + 1
         self.dispute_open = True
         self.dispute_votes = {}
-        self._resume_clue_selection_after_dispute = (
-            self.game.active_question is None
-            and self.game.current_round is not None
-            and not all(q.complete for q in self.game.current_round.questions)
-        )
+        self._resume_clue_selection_after_dispute = True
         answer = self.last_resolved_clue["answer"]
         message = (
             f"{self._player_name(player)} has disputed the last answer, which was {answer}. "
@@ -758,7 +936,7 @@ class AutoHostController:
         )
         options = [{"id": f"player:{i}", "label": self._player_name(p)} for i, p in enumerate(self.game.players)]
         options.append({"id": "nobody", "label": "Nobody"})
-        payload = json.dumps({"message": message, "options": options})
+        payload = json.dumps({"message": message, "options": options, "seconds_remaining": 30})
         for voter in self.game.players:
             voter.page = "dispute"
             voter.auto_payload = json.loads(payload)
@@ -766,6 +944,24 @@ class AutoHostController:
                 voter.waiter.send("DISPUTE_OPEN", payload)
         threading.Thread(target=self._play_text_and_wait, args=(message, "dispute-open"), daemon=True).start()
         self._start_dispute_timer()
+
+    def can_request_dispute(self):
+        board = getattr(self.game, "current_round", None)
+        if (
+            not self.enabled
+            or self.dispute_open
+            or not self.last_resolved_clue
+            or board is None
+            or board.__class__.__name__ == "FinalBoard"
+            or getattr(self.game, "active_question", None) is not None
+            or getattr(self.game, "answering_player", None) is not None
+            or getattr(self.game, "accepting_responses", False)
+            or getattr(self.game, "soliciting_player", False)
+        ):
+            return False
+        if self.player_in_control is None or getattr(self.player_in_control, "page", None) != "select":
+            return False
+        return not all(q.complete for q in getattr(board, "questions", []))
 
     def receive_dispute_vote(self, player, choice):
         if not self.dispute_open or player not in self.game.players:
@@ -826,7 +1022,10 @@ class AutoHostController:
             except (ValueError, IndexError):
                 new_player = None
         if new_player is not None:
-            self.game.set_score(new_player, new_player.score + value)
+            correction = value
+            if not record.get("was_correct") and new_player is not old_player:
+                correction += value
+            self.game.set_score(new_player, new_player.score + correction)
             self.game.set_player_in_control(new_player)
             self.player_in_control = new_player
             message = f"Dispute accepted. {self._player_name(new_player)} receives the points."
@@ -871,6 +1070,7 @@ class AutoHostController:
     def acknowledge_buzz(self, player):
         if not self.enabled:
             return
+        self.prompt_answer_wait(player)
         threading.Thread(target=self._acknowledge_buzz_then_record, args=(player,), daemon=True).start()
 
     def _acknowledge_buzz_then_record(self, player):
@@ -1029,6 +1229,7 @@ class AutoHostController:
         self.challenge_votes = {}
         self.challenge_open = False
         correct_prompt_player = None
+        daily_double_incorrect_clue = None
         for p in self.game.players:
             p.auto_payload = {}
             if p.page in ("judgement", "challenge"):
@@ -1040,7 +1241,11 @@ class AutoHostController:
             correct_prompt_player = player
         else:
             self.remember_resolved_clue(None)
-            self.speak_feedback(self.incorrect_feedback_text(), "incorrect-feedback")
+            if getattr(self.game.active_question, "dd", False):
+                daily_double_incorrect_clue = self.game.active_question
+                self._suppress_next_board_prompt = True
+            else:
+                self.speak_feedback(self.incorrect_feedback_text(), "incorrect-feedback")
             self.game.incorrect_answer()
         if player.waiter:
             player.waiter.send("JUDGEMENT_RESULT", json.dumps(judgement_payload))
@@ -1048,6 +1253,12 @@ class AutoHostController:
             threading.Thread(
                 target=self._speak_correct_then_prompt_next_clue,
                 args=(correct_prompt_player,),
+                daemon=True,
+            ).start()
+        if daily_double_incorrect_clue is not None:
+            threading.Thread(
+                target=self._speak_daily_double_incorrect_then_prompt_next_clue,
+                args=(daily_double_incorrect_clue,),
                 daemon=True,
             ).start()
         if not is_correct and self.game.active_question is not None and player.waiter:
@@ -1063,13 +1274,36 @@ class AutoHostController:
             self.player_in_control = player
         self._speak_next_clue_then_prompt()
 
+    def _speak_daily_double_incorrect_then_prompt_next_clue(self, clue):
+        self._play_text_and_wait(self.incorrect_feedback_text(), "daily-double-incorrect-feedback")
+        self._play_text_and_wait(self.stumped_text(clue), "daily-double-answer-reveal")
+        if not self.enabled or self.game.active_question is not None:
+            return
+        if not self.game.current_round or all(q.complete for q in self.game.current_round.questions):
+            return
+        self._speak_next_clue_then_prompt()
+
     def prompt_answer(self, player, auto_start=False, message="Speak now"):
         if not self.enabled or not player or not player.waiter:
             return
-        player.page = "record_answer"
-        player.auto_payload = {"prompt": message, "auto_start": auto_start}
+        player.page = "buzz"
+        player.auto_payload = {
+            "answer_state": "ready",
+            "prompt": message,
+            "auto_start": auto_start,
+        }
         payload = json.dumps(player.auto_payload)
         player.waiter.send("PROMPT_RECORD_ANSWER_AUTO" if auto_start else "PROMPT_RECORD_ANSWER", payload)
+
+    def prompt_answer_wait(self, player):
+        if not self.enabled or not player or not player.waiter:
+            return
+        player.page = "buzz"
+        player.auto_payload = {
+            "answer_state": "waiting",
+            "prompt": "Wait to talk...",
+        }
+        player.waiter.send("PROMPT_WAIT_ANSWER", json.dumps(player.auto_payload))
 
     def prompt_daily_double_wager(self):
         if not self.enabled or not self.player_in_control:

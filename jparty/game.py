@@ -568,13 +568,17 @@ class Game(QObject):
         self.active_question.complete = True
         self.active_question = None
         self.previous_answerer = []
-        if all(q.complete for q in self.current_round.questions):
+        round_complete = all(q.complete for q in self.current_round.questions)
+        if round_complete:
             logging.info("Ready for next round")
             self.keystroke_manager.activate("ADMIN_SHOW_STATS", "NEXT_ROUND")
         
         # clear stats
         for player in self.players:
             self.dc.player_widget(player).clear_stats()
+        if self.auto_host.enabled and round_complete and getattr(self.current_round, "dj", False):
+            self.next_round()
+            return
         self.auto_host.after_back_to_board()
 
     def set_player_in_control(self, new_player):

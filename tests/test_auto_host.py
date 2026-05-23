@@ -1,7 +1,13 @@
 import unittest
+import tempfile
 from unittest.mock import patch
 
 from jparty.auto_host import AutoHostController, AutoHostAI, Judgement
+
+try:
+    from jparty.game import Game
+except ModuleNotFoundError:
+    Game = None
 
 
 class FakeWaiter:
@@ -67,6 +73,20 @@ class FakeQuestion:
         self.dd = dd
 
 
+class FakeResponse:
+    def __init__(self, json_data=None, content=b"audio", raise_error=None):
+        self._json_data = json_data or {}
+        self.content = content
+        self.raise_error = raise_error
+
+    def raise_for_status(self):
+        if self.raise_error:
+            raise self.raise_error
+
+    def json(self):
+        return self._json_data
+
+
 class FakeBoard:
     def __init__(self):
         self.categories = ["Computers", "History"]
@@ -100,9 +120,14 @@ class FakeGame:
         self.data = FakeData(self.current_round)
         self.keystroke_manager = FakeKeyStrokeManager()
         self.dc = FakeDisplayController()
+        self.accepting_responses = False
+        self.soliciting_player = False
 
     def set_player_in_control(self, player):
         self.highlighted_player = player
+
+    def set_score(self, player, score):
+        player.score = score
 
     def correct_answer(self):
         self.correct_calls += 1
@@ -219,13 +244,18 @@ class AutoHostTests(unittest.TestCase):
         }
         player = game.players[0]
         game.active_question = None
+        game.answering_player = None
+        controller.player_in_control = player
+        player.page = "select"
 
         for _ in range(5):
+            player.page = "select"
             controller.request_dispute(player)
             self.assertTrue(controller.dispute_open)
             controller.dispute_open = False
             controller.dispute_votes = {}
 
+        player.page = "select"
         controller.request_dispute(player)
 
         self.assertEqual(controller.dispute_counts[player], 5)
@@ -245,16 +275,138 @@ class AutoHostTests(unittest.TestCase):
             "awarded_player": game.players[0],
         }
         game.active_question = None
+        game.answering_player = None
+        game.players[0].page = "select"
         controller.request_dispute(game.players[1])
 
         self.assertTrue(controller.dispute_open)
         self.assertTrue(controller._resume_clue_selection_after_dispute)
+        dispute_payload = next(text for message, text in game.players[0].waiter.messages if message == "DISPUTE_OPEN")
+        self.assertIn('"seconds_remaining": 30', dispute_payload)
 
         controller.resolve_dispute()
 
         self.assertFalse(controller.dispute_open)
         self.assertFalse(controller._resume_clue_selection_after_dispute)
         self.assertIn("PROMPT_SELECT_CLUE", [message for message, _text in game.players[0].waiter.messages])
+
+    def test_dispute_awards_double_value_after_prior_incorrect_penalty(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.player_in_control = game.players[0]
+        game.players[1].score = -200
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": None,
+            "was_correct": False,
+        }
+
+        controller.apply_dispute_result("player:1")
+
+        self.assertEqual(game.players[1].score, 200)
+        self.assertIs(controller.player_in_control, game.players[1])
+
+    def test_dispute_reassigns_single_value_after_prior_correct_award(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        game.players[0].score = 200
+        game.players[1].score = 0
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+            "was_correct": True,
+        }
+
+        controller.apply_dispute_result("player:1")
+
+        self.assertEqual(game.players[0].score, 0)
+        self.assertEqual(game.players[1].score, 200)
+
+    def test_dispute_rejects_before_next_clue_picker_opens(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.player_in_control = game.players[0]
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+        }
+        game.active_question = None
+        game.answering_player = None
+        game.players[0].page = "buzz"
+
+        controller.request_dispute(game.players[1])
+
+        self.assertFalse(controller.dispute_open)
+        self.assertEqual(controller.dispute_counts, {})
+
+    def test_prompt_clue_selection_enables_dispute_controls_after_picker_opens(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.player_in_control = game.players[0]
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+        }
+        game.active_question = None
+        game.answering_player = None
+
+        controller.prompt_clue_selection()
+
+        self.assertEqual(game.players[0].page, "select")
+        control_messages = [
+            text
+            for player in game.players
+            for message, text in player.waiter.messages
+            if message == "AUTO_HOST_CONTROLS"
+        ]
+        self.assertTrue(any('"can_dispute": true' in text for text in control_messages))
+
+    def test_dispute_rejects_live_response_window(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+        }
+        game.active_question = None
+        controller.player_in_control = game.players[0]
+        game.players[0].page = "select"
+        game.accepting_responses = True
+
+        controller.request_dispute(game.players[1])
+
+        self.assertFalse(controller.dispute_open)
+        self.assertEqual(controller.dispute_counts, {})
+
+    def test_dispute_rejects_completed_round(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.last_resolved_clue = {
+            "clue": game.current_round.questions[0],
+            "answer": "Ada Lovelace",
+            "value": 200,
+            "awarded_player": game.players[0],
+        }
+        game.active_question = None
+        controller.player_in_control = game.players[0]
+        game.players[0].page = "select"
+        for clue in game.current_round.questions:
+            clue.complete = True
+
+        controller.request_dispute(game.players[1])
+
+        self.assertFalse(controller.dispute_open)
+        self.assertEqual(controller.dispute_counts, {})
 
     def test_select_clue_ignores_late_voice_result_after_clue_loaded(self):
         game = FakeGame()
@@ -284,7 +436,27 @@ class AutoHostTests(unittest.TestCase):
 
         controller._acknowledge_buzz_then_record(game.players[0])
 
-        self.assertEqual(game.players[0].page, "record_answer")
+        self.assertEqual(game.players[0].page, "buzz")
+        self.assertEqual(game.players[0].auto_payload["answer_state"], "ready")
+        self.assertEqual(game.players[0].waiter.messages[-1][0], "PROMPT_RECORD_ANSWER_AUTO")
+
+    def test_buzz_wait_prompt_precedes_auto_record_prompt(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller._play_text_and_wait = lambda text, purpose: None
+
+        with patch("jparty.auto_host.threading.Thread") as thread_class:
+            controller.acknowledge_buzz(game.players[0])
+            target = thread_class.call_args.kwargs["target"]
+            args = thread_class.call_args.kwargs["args"]
+
+        self.assertEqual(game.players[0].page, "buzz")
+        self.assertEqual(game.players[0].auto_payload["answer_state"], "waiting")
+        self.assertEqual(game.players[0].waiter.messages[-1][0], "PROMPT_WAIT_ANSWER")
+
+        target(*args)
+
+        self.assertEqual(game.players[0].auto_payload["answer_state"], "ready")
         self.assertEqual(game.players[0].waiter.messages[-1][0], "PROMPT_RECORD_ANSWER_AUTO")
 
     def test_openai_api_key_prefers_environment(self):
@@ -295,6 +467,126 @@ class AutoHostTests(unittest.TestCase):
 
         with patch.dict("os.environ", {}, clear=True):
             self.assertEqual(ai.api_key(), "saved-key")
+
+    def test_local_transcription_posts_to_configured_endpoint(self):
+        ai = AutoHostAI({
+            "ai_provider": "local",
+            "local_stt_base_url": "http://localhost:8082/v1/",
+            "local_stt_model": "whisper-large-v3-turbo",
+        })
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse({"text": "Computers for four hundred"})
+
+        with patch("jparty.auto_host.requests.post", side_effect=fake_post):
+            transcript = ai.transcribe(b"audio", "audio/webm")
+
+        self.assertEqual(transcript, "Computers for four hundred")
+        self.assertEqual(calls[0][0], "http://localhost:8082/v1/audio/transcriptions")
+        self.assertEqual(calls[0][1]["data"]["model"], "whisper-large-v3-turbo")
+
+    def test_local_transcription_failure_returns_empty_string(self):
+        ai = AutoHostAI({"ai_provider": "local"})
+
+        with patch("jparty.auto_host.requests.post", side_effect=RuntimeError("down")), patch(
+            "jparty.auto_host.logging.exception"
+        ):
+            self.assertEqual(ai.transcribe(b"audio", "audio/webm"), "")
+
+    def test_local_clue_selection_posts_to_local_llm_after_heuristic_miss(self):
+        game = FakeGame()
+        ai = AutoHostAI({
+            "ai_provider": "local",
+            "local_llm_base_url": "http://localhost:11434/v1/",
+            "local_llm_model": "qwen2.5:7b",
+        })
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"category_index": 0, "value": 400, "needs_gui": false}'
+                    }
+                }
+            ]
+        }
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(payload)
+
+        with patch.object(ai, "_heuristic_parse_clue", return_value=None), patch(
+            "jparty.auto_host.requests.post", side_effect=fake_post
+        ):
+            clue = ai.parse_clue_selection("the second programming clue", game.current_round)
+
+        self.assertIs(clue, game.current_round.questions[2])
+        self.assertEqual(calls[0][0], "http://localhost:11434/v1/chat/completions")
+        self.assertEqual(calls[0][1]["json"]["model"], "qwen2.5:7b")
+
+    def test_local_judgement_posts_to_local_llm_for_ambiguous_answer(self):
+        game = FakeGame()
+        ai = AutoHostAI({"ai_provider": "local", "local_llm_model": "llama3.2:3b"})
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"is_correct": false, "confidence": 0.7, "reason": "Different person"}'
+                    }
+                }
+            ]
+        }
+
+        with patch("jparty.auto_host.requests.post", return_value=FakeResponse(payload)):
+            judgement = ai.judge_answer(game.active_question, "Ada Byron")
+
+        self.assertFalse(judgement.is_correct)
+        self.assertEqual(judgement.confidence, 0.7)
+        self.assertEqual(judgement.reason, "Different person")
+
+    def test_local_invalid_judgement_json_falls_back_to_heuristic(self):
+        game = FakeGame()
+        ai = AutoHostAI({"ai_provider": "local"})
+        payload = {"choices": [{"message": {"content": "not json"}}]}
+
+        with patch("jparty.auto_host.requests.post", return_value=FakeResponse(payload)):
+            judgement = ai.judge_answer(game.active_question, "Ada Byron")
+
+        self.assertEqual(judgement.reason, "Did not closely match expected answer.")
+
+    def test_local_tts_posts_to_configured_endpoint_and_reuses_cache(self):
+        ai = AutoHostAI({
+            "ai_provider": "local",
+            "local_tts_base_url": "http://localhost:8880/v1/",
+            "local_tts_model": "kokoro",
+            "local_tts_voice": "af_heart",
+        })
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(content=b"RIFF-local-wav")
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("jparty.auto_host.user_data_dir", tmpdir), patch(
+            "jparty.auto_host.requests.post", side_effect=fake_post
+        ):
+            path = ai.speech_file("Correct!", "host")
+            cached_path = ai.speech_file("Correct!", "host")
+
+        self.assertEqual(path, cached_path)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "http://localhost:8880/v1/audio/speech")
+        self.assertEqual(calls[0][1]["json"]["voice"], "af_heart")
+
+    def test_local_tts_failure_returns_none(self):
+        ai = AutoHostAI({"ai_provider": "local"})
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("jparty.auto_host.user_data_dir", tmpdir), patch(
+            "jparty.auto_host.requests.post", side_effect=RuntimeError("down")
+        ), patch("jparty.auto_host.logging.exception"):
+            self.assertIsNone(ai.speech_file("Hello", "host"))
 
     def test_fast_judgement_skips_openai_for_exact_match(self):
         game = FakeGame()
@@ -307,6 +599,21 @@ class AutoHostTests(unittest.TestCase):
         self.assertEqual(judgement.confidence, 0.98)
         openai_judge.assert_not_called()
 
+    def test_plausible_non_matching_judgement_uses_openai(self):
+        game = FakeGame()
+        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+
+        with patch("jparty.auto_host.requests", object()), patch.object(
+            ai,
+            "_openai_judge_answer",
+            return_value=Judgement(False, 0.7, "OpenAI rejected it", "Ada Byron"),
+        ) as openai_judge:
+            judgement = ai.judge_answer(game.active_question, "Ada Byron")
+
+        self.assertFalse(judgement.is_correct)
+        self.assertEqual(judgement.reason, "OpenAI rejected it")
+        openai_judge.assert_called_once()
+
     def test_obvious_wrong_judgement_skips_openai(self):
         game = FakeGame()
         ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
@@ -316,6 +623,17 @@ class AutoHostTests(unittest.TestCase):
 
         self.assertFalse(judgement.is_correct)
         self.assertEqual(judgement.confidence, 0.97)
+        openai_judge.assert_not_called()
+
+    def test_fast_judgement_skips_openai_for_near_match(self):
+        game = FakeGame()
+        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+
+        with patch.object(ai, "_openai_judge_answer") as openai_judge:
+            judgement = ai.judge_answer(game.active_question, "What is Ada Lovelace")
+
+        self.assertTrue(judgement.is_correct)
+        self.assertEqual(judgement.confidence, 0.98)
         openai_judge.assert_not_called()
 
     def test_correct_judgement_finalizes_correct(self):
@@ -343,6 +661,39 @@ class AutoHostTests(unittest.TestCase):
         self.assertIsNone(controller.pending_judgement)
         self.assertEqual(game.correct_calls, 0)
         self.assertEqual(game.incorrect_calls, 1)
+
+    def test_daily_double_incorrect_judgement_sequences_reveal(self):
+        game = FakeGame()
+        game.active_question.dd = True
+        controller = AutoHostController(game)
+
+        with patch("jparty.auto_host.threading.Thread") as thread_class:
+            controller.open_pending_judgement(
+                game.players[0],
+                Judgement(False, 0.7, "Looks wrong", "Wrong answer"),
+            )
+
+        self.assertEqual(game.incorrect_calls, 1)
+        self.assertTrue(controller._suppress_next_board_prompt)
+        self.assertEqual(
+            thread_class.call_args.kwargs["target"],
+            controller._speak_daily_double_incorrect_then_prompt_next_clue,
+        )
+
+    def test_daily_double_incorrect_feedback_reveals_answer_before_next_clue(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        game.active_question = None
+        played = []
+        controller._play_text_and_wait = lambda text, purpose: played.append(purpose)
+        controller._speak_next_clue_then_prompt = lambda: played.append("next-clue")
+
+        controller._speak_daily_double_incorrect_then_prompt_next_clue(game.current_round.questions[0])
+
+        self.assertEqual(
+            played,
+            ["daily-double-incorrect-feedback", "daily-double-answer-reveal", "next-clue"],
+        )
 
     def test_correct_answer_suppresses_immediate_board_prompt(self):
         game = FakeGame()
@@ -455,6 +806,36 @@ class AutoHostTests(unittest.TestCase):
         self.assertEqual(game.active_question.value, 200)
         self.assertEqual(game.keystroke_manager.activated, [])
 
+    @unittest.skipIf(Game is None, "PyQt6 game runtime is unavailable")
+    def test_completed_double_jeopardy_auto_advances_from_board(self):
+        game = Game.__new__(Game)
+        question = FakeQuestion(complete=False)
+        game.active_question = question
+        game.current_round = FakeBoard()
+        game.current_round.dj = True
+        for clue in game.current_round.questions:
+            clue.complete = True
+        game.current_round.questions[0] = question
+        game.previous_answerer = [object()]
+        game.players = []
+        game.timer = object()
+        game.keystroke_manager = FakeKeyStrokeManager()
+        game.auto_host = type("AutoHost", (), {"enabled": True, "after_back_to_board": lambda _self: None})()
+        game.dc = type(
+            "Display",
+            (),
+            {
+                "hide_question": lambda _self: None,
+                "player_widget": lambda _self, _player: None,
+            },
+        )()
+        advanced = []
+        game.next_round = lambda: advanced.append(True)
+
+        Game.back_to_board(game)
+
+        self.assertTrue(question.complete)
+        self.assertEqual(advanced, [True])
 
 if __name__ == "__main__":
     unittest.main()

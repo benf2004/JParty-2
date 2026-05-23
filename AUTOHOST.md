@@ -31,20 +31,21 @@ Auto Host is off by default and can be enabled in Settings.
 7. Auto Host reads the clue aloud.
 8. JParty opens responses and players can buzz.
 9. The first valid buzz gets control of the answer attempt.
-10. Auto Host says the player name, such as `Ben?`
-11. That player's phone automatically starts answer recording.
-12. The recorded answer is uploaded to the computer.
-13. AI transcribes and judges the answer.
-14. If the answer is judged correct:
+10. That player's buzzer page shows `Wait to talk...`.
+11. Auto Host says the player name, such as `Ben?`
+12. The in-place answer panel starts answer recording on that player's buzzer page.
+13. The recorded answer is uploaded to the computer.
+14. AI transcribes and judges the answer.
+15. If the answer is judged correct:
     - Auto Host gives brief positive feedback
     - JParty awards points
     - that player gains control
     - Auto Host prompts them to choose the next clue
-15. If the answer is judged incorrect:
+16. If the answer is judged incorrect:
     - Auto Host says a short incorrect phrase
     - JParty subtracts points according to settings
     - other players may buzz in
-16. If time runs out:
+17. If time runs out:
     - Auto Host announces the correct response
     - JParty returns to the board
     - the player in control is prompted to pick the next clue
@@ -75,6 +76,113 @@ The saved config is local to the user's machine, such as:
 ```
 
 The key is not sent to player phones.
+
+## Local AI Setup For Beginners
+
+Local Auto Host lets JParty use AI services running on your own computer instead of paid cloud APIs.
+
+The pieces are:
+
+- **Local model runner**: an app such as Ollama or LM Studio that runs a local LLM.
+- **LLM**: the text brain that parses clue choices and judges ambiguous answers.
+- **STT**: speech-to-text; turns player microphone recordings into text.
+- **TTS**: text-to-speech; turns host lines into spoken audio.
+
+JParty does not install or start these services during a game. In local mode it connects to services you already started.
+
+### Beginner LLM Path: Ollama
+
+For a 16 GB Apple Silicon Mac, start with:
+
+```text
+qwen2.5:7b
+```
+
+If that feels slow, use:
+
+```text
+llama3.2:3b
+```
+
+If you want to try a heavier 7B model, use:
+
+```text
+mistral:7b
+```
+
+The helper script installs/checks Homebrew, Ollama, and ffmpeg, starts Ollama if needed, pulls the default model, and prints the settings to copy into JParty:
+
+```bash
+scripts/setup_local_auto_host_macos.sh
+```
+
+To use a smaller model:
+
+```bash
+JPARTY_LOCAL_LLM_MODEL=llama3.2:3b scripts/setup_local_auto_host_macos.sh
+```
+
+Default JParty local LLM settings:
+
+```text
+Auto Host AI provider: local
+Local LLM URL: http://localhost:11434/v1
+Local LLM model: qwen2.5:7b
+```
+
+### Local Speech-To-Text
+
+Use a Whisper-compatible local server that exposes an OpenAI-style endpoint:
+
+```text
+POST /v1/audio/transcriptions
+```
+
+JParty defaults:
+
+```text
+Local STT URL: http://localhost:8082/v1
+Local STT model: whisper
+```
+
+Good local STT families to look for are `whisper.cpp` and `faster-whisper`. If STT is not running or fails, JParty asks the player to retry or use the on-screen fallback.
+
+For a fuller beginner path that installs and starts local Whisper speech-to-text and Kokoro text-to-speech too, use:
+
+```bash
+scripts/setup_full_local_auto_host_macos.sh
+```
+
+After setup, use `scripts/start_full_local_auto_host_macos.sh` before playing and `scripts/stop_full_local_auto_host_macos.sh` when you are done.
+
+See `FULL_LOCAL_AUTOHOST.md` for the step-by-step version. See `VOICE_CLONE_AUTOHOST.md` if you want to use your own cloned host voice.
+
+### Local Text-To-Speech
+
+Use a Kokoro-style local server that exposes an OpenAI-style endpoint:
+
+```text
+POST /v1/audio/speech
+```
+
+JParty defaults:
+
+```text
+Local TTS URL: http://localhost:8880/v1
+Local TTS model: kokoro
+Local TTS voice: af_heart
+```
+
+If TTS is not running or fails, the game continues without spoken host audio.
+
+### LM Studio Alternative
+
+LM Studio is a good option if you prefer a graphical app for downloading and swapping models. Start its local OpenAI-compatible server, then set:
+
+```text
+Local LLM URL: http://localhost:1234/v1
+Local LLM model: the loaded model name shown in LM Studio
+```
 
 ## Local HTTPS And Microphone Access
 
@@ -219,18 +327,20 @@ Spoken answer processing uses this path:
 
 1. A player buzzes.
 2. JParty locks out other buzzes.
-3. Auto Host says the player's typed name.
-4. The player's phone opens the answer screen.
-5. Recording starts automatically.
-6. Audio uploads with purpose:
+3. The player's buzzer page shows a brief wait prompt.
+4. Auto Host says the player's typed name.
+5. The answer panel appears on that buzzer page.
+6. Recording starts automatically.
+7. Audio uploads with purpose:
 
 ```text
 answer
 ```
 
-7. Auto Host transcribes the audio.
-8. Empty transcripts do not open judgement. The player is prompted to try again.
-9. Non-empty transcripts are judged against:
+8. Auto Host transcribes the audio.
+9. Empty transcripts do not open judgement. The player is prompted to try again.
+10. Non-empty transcripts are checked locally for an exact or near-exact answer match before slower AI judging is used.
+11. Answers that still need judgement are checked against:
    - clue text
    - expected answer
    - leniency setting
@@ -337,8 +447,9 @@ Common messages:
 
 - `PROMPT_SELECT_CLUE`: show the clue picker and start clue-selection recording.
 - `PROMPT_BUZZ`: return phone to buzzer screen.
-- `PROMPT_RECORD_ANSWER`: show answer recording screen.
-- `PROMPT_RECORD_ANSWER_AUTO`: show answer screen and auto-record.
+- `PROMPT_WAIT_ANSWER`: show the buzzer-page wait prompt before the host acknowledgement finishes.
+- `PROMPT_RECORD_ANSWER`: show the buzzer-page answer panel.
+- `PROMPT_RECORD_ANSWER_AUTO`: show the buzzer-page answer panel and auto-record.
 - `PROMPT_DD_WAGER`: show Daily Double wager screen.
 - `JUDGEMENT_RESULT`: briefly show the applied AI judgement to the answering player.
 - `AUTO_HOST_FALLBACK`: show fallback message.

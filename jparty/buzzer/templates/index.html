@@ -28,6 +28,17 @@
       <button type="button" id="play-again-button" class="jparty-button auto-host-control" onclick="playAgainVote()">Play Again</button>
       <button type="button" id="dispute-buzz-button" class="jparty-button auto-host-control dispute-button" onclick="disputeLastClue()">Dispute Last Clue</button>
       <div id="buzz-status" class="recording-status hints"></div>
+      <div id="buzz-answer-panel" class="auto-host-page buzz-answer-panel">
+        <div id="answer-record-prompt" class="prompt">Record your answer</div>
+        <div id="answer-record-status" class="recording-status hints"></div>
+        <div id="buzz-answer-controls">
+          <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('answer')">Record Answer</button>
+          <form onsubmit="answerForm(this);" action="javascript:void(0);" class="answer_form fallback-form">
+              <input type='text' name="answer" class="answer_input text_input" placeholder="Type answer"/>
+              <button type="submit" class="jparty-button submit">Submit Text</button>
+          </form>
+        </div>
+      </div>
       <div class="hints buzz-hint">
         Hint:</br> Turn off Auto-Lock and Low Power Mode so your buzzer doesn't go dark!
       </div>
@@ -75,7 +86,7 @@
   </div>
 
   <div class="w3-container answer-page" style="margin-top:90px">
-      <form onsubmit="answerForm();" action="javascript:void(0);" class="answer_form">
+      <form onsubmit="answerForm(this);" action="javascript:void(0);" class="answer_form">
           <div class="prompt">What is ...</div>
           <input type='text' name="answer" class="answer_input text_input" placeholder="Answer"/>
           <button type="submit" class="jparty-button submit">Submit</button>
@@ -88,16 +99,6 @@
       <button type="button" id="dispute-select-button" class="jparty-button auto-host-control dispute-button" onclick="disputeLastClue()">Dispute Last Clue</button>
       <div id="recording-status" class="recording-status hints"></div>
       <div id="clue-grid" class="clue-grid"></div>
-  </div>
-
-  <div class="w3-container record_answer-page auto-host-page" style="margin-top:90px">
-      <div id="answer-record-prompt" class="prompt">Record your answer</div>
-      <div id="answer-record-status" class="recording-status hints"></div>
-      <button type="button" class="jparty-button record-button" onclick="recordAutoHostAudio('answer')">Record Answer</button>
-      <form onsubmit="answerForm();" action="javascript:void(0);" class="answer_form fallback-form">
-          <input type='text' name="answer" class="answer_input text_input" placeholder="Type answer"/>
-          <button type="submit" class="jparty-button submit">Submit Text</button>
-      </form>
   </div>
 
   <div class="w3-container dd_wager-page auto-host-page" style="margin-top:90px">

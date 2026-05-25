@@ -6,8 +6,11 @@ from jparty import auto_host as auto_host_module
 from jparty.auto_host import AutoHostController, AutoHostAI, Judgement
 
 try:
-    from jparty.game import Game
+    from jparty.controller import BuzzerController
+    from jparty.game import FinalBoard, Game
 except ModuleNotFoundError:
+    BuzzerController = None
+    FinalBoard = None
     Game = None
 
 
@@ -27,6 +30,7 @@ class FakePlayer:
         self.page = "buzz"
         self.auto_payload = {}
         self.score = 0
+        self.finalanswer = ""
 
 
 class FakeSignal:
@@ -607,12 +611,73 @@ class AutoHostTests(unittest.TestCase):
             "this category is about NASA and computers",
         )
 
+    def test_basic_clue_speech_normalization_expands_number_abbreviation(self):
+        ai = AutoHostAI({"ai_provider": "local", "speech_normalization": False})
+
+        spoken = ai.normalize_clue_for_speech("this no. 1 big city in america")
+
+        self.assertEqual(spoken, "this number one big city in america")
+
+    def test_local_clue_speech_normalization_uses_ollama_style_endpoint(self):
+        ai = AutoHostAI({
+            "ai_provider": "local",
+            "local_llm_base_url": "http://localhost:11434/v1/",
+            "local_llm_model": "qwen2.5:7b",
+        })
+        payload = {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"spoken_text": "this number one big city in america"}'
+                    }
+                }
+            ]
+        }
+        calls = []
+
+        def fake_post(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse(payload)
+
+        with patch("jparty.auto_host.requests.post", side_effect=fake_post):
+            spoken = ai.normalize_clue_for_speech("this no. 1 big city in america")
+            cached = ai.normalize_clue_for_speech("this no. 1 big city in america")
+
+        self.assertEqual(spoken, "this number one big city in america")
+        self.assertEqual(cached, spoken)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "http://localhost:11434/v1/chat/completions")
+        self.assertIn("no. 1", calls[0][1]["json"]["messages"][0]["content"])
+
+    def test_clue_text_caches_normalized_speech_on_clue(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        calls = []
+
+        def normalize(text):
+            calls.append(text)
+            return "normalized clue"
+
+        controller.ai.normalize_clue_for_speech = normalize
+
+        self.assertEqual(controller.clue_text(game.active_question), "normalized clue")
+        self.assertEqual(controller.clue_text(game.active_question), "normalized clue")
+        self.assertEqual(calls, [game.active_question.text])
+
+    def test_category_announcement_uses_sentence_pauses(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+
+        text = controller.category_announcement_text(["Computers", "History"])
+
+        self.assertEqual(text, "Category one: Computers. Category two: History.")
+
     def test_local_tts_retries_connection_failure_once(self):
         ai = AutoHostAI({
             "ai_provider": "local",
-            "local_tts_base_url": "http://localhost:8892/v1/",
-            "local_tts_model": "kokoclone",
-            "local_tts_voice": "my_voice",
+            "local_tts_base_url": "http://localhost:8880/v1/",
+            "local_tts_model": "macos-say",
+            "local_tts_voice": "Ben Personal Voice",
         })
         calls = []
 
@@ -638,21 +703,12 @@ class AutoHostTests(unittest.TestCase):
         ), patch("jparty.auto_host.logging.exception"):
             self.assertIsNone(ai.speech_file("Hello", "host"))
 
-    def test_kokoclone_local_tts_skips_background_preload(self):
-        game = FakeGame()
-        game.config["auto_host"].update({
-            "ai_provider": "local",
-            "local_tts_preset": "kokoclone_clone",
-            "local_tts_base_url": "http://localhost:8892/v1",
-            "local_tts_model": "kokoclone",
-        })
-        controller = AutoHostController(game)
+    def test_local_tts_defaults_to_macos_personal_voice_bridge(self):
+        ai = AutoHostAI({"ai_provider": "local"})
 
-        with patch("jparty.auto_host.threading.Thread") as thread:
-            controller.preload_round_audio(game.current_round)
-            controller.preload_buzz_acknowledgement(game.players[0])
-
-        thread.assert_not_called()
+        self.assertEqual(ai.config["local_tts_model"], "macos-say")
+        self.assertEqual(ai.config["local_tts_preset"], "macos_personal_voice")
+        self.assertTrue(ai.should_preload_audio())
 
     def test_fast_judgement_skips_openai_for_exact_match(self):
         game = FakeGame()
@@ -801,6 +857,29 @@ class AutoHostTests(unittest.TestCase):
         self.assertIn("Double Jeopardy", played[0][0])
         self.assertIn("PROMPT_SELECT_CLUE", [message for message, _text in game.players[0].waiter.messages])
 
+    @unittest.skipIf(BuzzerController is None, "PyQt6 game runtime is unavailable")
+    def test_final_answer_ignores_stale_toolate_submit_after_player_submits(self):
+        game = type("GameStub", (), {})()
+        game.current_round = FinalBoard("Final", FakeQuestion())
+        game.auto_host = type("AutoHost", (), {"enabled": True})()
+        game.answering_player = None
+        game.active_question = None
+        player = FakePlayer("A")
+        player.page = "answer"
+
+        def record_answer(answering_player, guess):
+            answering_player.finalanswer = guess
+
+        game.answer = record_answer
+        controller = BuzzerController.__new__(BuzzerController)
+        controller.game = game
+
+        controller.answer(player, "real final answer")
+        controller.answer(player, "old daily double answer")
+
+        self.assertEqual(player.finalanswer, "real final answer")
+        self.assertEqual(player.page, "null")
+
     def test_daily_double_amount_parsing(self):
         game = FakeGame()
         controller = AutoHostController(game)
@@ -879,6 +958,37 @@ class AutoHostTests(unittest.TestCase):
         game.active_question = question
         game.current_round = FakeBoard()
         game.current_round.dj = True
+        for clue in game.current_round.questions:
+            clue.complete = True
+        game.current_round.questions[0] = question
+        game.previous_answerer = [object()]
+        game.players = []
+        game.timer = object()
+        game.keystroke_manager = FakeKeyStrokeManager()
+        game.auto_host = type("AutoHost", (), {"enabled": True, "after_back_to_board": lambda _self: None})()
+        game.dc = type(
+            "Display",
+            (),
+            {
+                "hide_question": lambda _self: None,
+                "player_widget": lambda _self, _player: None,
+            },
+        )()
+        advanced = []
+        game.next_round = lambda: advanced.append(True)
+
+        Game.back_to_board(game)
+
+        self.assertTrue(question.complete)
+        self.assertEqual(advanced, [True])
+
+    @unittest.skipIf(Game is None, "PyQt6 game runtime is unavailable")
+    def test_completed_first_round_auto_advances_from_board(self):
+        game = Game.__new__(Game)
+        question = FakeQuestion(complete=False)
+        game.active_question = question
+        game.current_round = FakeBoard()
+        game.current_round.dj = False
         for clue in game.current_round.questions:
             clue.complete = True
         game.current_round.questions[0] = question

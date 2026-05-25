@@ -4,14 +4,28 @@ This guide gets Auto Host running without paid AI APIs. Everything runs on your 
 
 ## What You Are Installing
 
-- **Ollama** runs the local LLM. JParty uses it to understand clue choices and judge ambiguous answers.
+- **Ollama** runs the local LLM. JParty uses it to understand clue choices, normalize clue speech, and judge ambiguous answers.
 - **whisper.cpp** runs Whisper locally. JParty uses it to turn player microphone recordings into text.
-- **Kokoro-FastAPI** runs a better local voice server. JParty uses it to speak host lines.
-- **Docker Desktop** runs Kokoro without making you set up a Python voice server by hand.
-- **KokoClone** is the optional lighter voice-cloning path. It runs in its own Python 3.12 environment and does not require Docker.
-- **ffmpeg** converts audio formats so phone recordings and generated speech work smoothly.
+- **macOS speech** speaks host lines through Apple's built-in speech system, including your Personal Voice when macOS exposes it to apps.
+- **ffmpeg** converts generated speech into WAV audio that JParty can play.
 
 JParty does not secretly install or launch these during a game. You run the setup script yourself, and the script starts local services on your computer.
+
+## Personal Voice
+
+Create your Personal Voice in **System Settings > Accessibility > Personal Voice**, then turn on **Allow applications to use your Personal Voice**.
+
+After that, run:
+
+```bash
+say -v ?
+```
+
+Use the exact Personal Voice name from that list as JParty's **Local TTS voice**. You can also run:
+
+```bash
+scripts/local_macos_tts_server.py --list-voices
+```
 
 ## One-Command Beginner Setup
 
@@ -25,10 +39,10 @@ That script will:
 
 1. Check that you are on macOS.
 2. Install Homebrew if you approve it.
-3. Install/check Ollama, whisper.cpp, ffmpeg, and Docker Desktop.
+3. Install/check Ollama, whisper.cpp, and ffmpeg.
 4. Download a local Whisper model.
 5. Pull a local Ollama model.
-6. Start the local LLM, STT, and Kokoro TTS services.
+6. Start the local LLM, STT, and macOS TTS bridge.
 7. Print the exact JParty settings to use.
 
 The default choices are meant for a 16 GB Apple Silicon Mac:
@@ -36,10 +50,8 @@ The default choices are meant for a 16 GB Apple Silicon Mac:
 ```text
 LLM: qwen2.5:7b
 Whisper: base.en
-TTS: Kokoro af_heart
+TTS: macOS Personal Voice through macos-say
 ```
-
-During setup, the script asks whether you want to set up voice cloning. If you say yes, it runs the separate KokoClone addon setup and prints cloned-voice TTS settings instead of Kokoro settings. If you say no, it uses Kokoro through Docker.
 
 ## Smaller Or Larger Models
 
@@ -74,20 +86,11 @@ Local LLM URL: http://localhost:11434/v1
 Local LLM model: qwen2.5:7b
 Local STT URL: http://localhost:8082/v1
 Local STT model: whisper
+Local TTS: macOS Personal Voice
 Local TTS URL: http://localhost:8880/v1
-Local TTS model: kokoro
-Local TTS voice: af_heart
+Local TTS model: macos-say
+Local TTS voice: your Personal Voice name, or blank for the Mac default
 ```
-
-Kokoro voices are much more natural than the built-in macOS voices. `af_heart` is the beginner default because it is warm and clear.
-
-If Docker or Kokoro gives you trouble, this repo also includes a simple fallback macOS voice bridge:
-
-```bash
-scripts/local_macos_tts_server.py
-```
-
-For that fallback, use `Local TTS model: macos-say` and a macOS voice such as `Samantha`.
 
 ## What Runs Where
 
@@ -97,8 +100,8 @@ Player phone audio
   -> whisper.cpp at http://localhost:8082/v1/audio/transcriptions
   -> transcript text
   -> Ollama at http://localhost:11434/v1/chat/completions
-  -> judgement or clue choice
-  -> Kokoro TTS at http://localhost:8880/v1/audio/speech
+  -> judgement, clue choice, or clue speech normalization
+  -> macOS TTS at http://localhost:8880/v1/audio/speech
   -> host voice from computer speakers
 ```
 
@@ -116,15 +119,6 @@ When you are done playing, stop them with:
 scripts/stop_full_local_auto_host_macos.sh
 ```
 
-The setup script also prints logs and manual stop commands. The common stop commands are:
-
-```bash
-pkill -f 'ollama serve'
-pkill -f 'whisper-server'
-docker stop jparty-kokoro-tts
-scripts/voice_clone.sh stop-kokoclone
-```
-
 ## Uninstalling The Full Local Setup
 
 To remove the full local Auto Host services and downloaded model files:
@@ -133,7 +127,7 @@ To remove the full local Auto Host services and downloaded model files:
 scripts/uninstall_full_local_auto_host_macos.sh
 ```
 
-The uninstall script does not remove Homebrew and does not edit your JParty settings. It can remove the Ollama, whisper.cpp, ffmpeg, Docker Desktop, Kokoro container/image, and downloaded Whisper files if you confirm those prompts.
+The uninstall script does not remove Homebrew and does not edit your JParty settings. It can remove the Ollama, whisper.cpp, ffmpeg, and downloaded Whisper files if you confirm those prompts.
 
 ## Troubleshooting
 
@@ -143,18 +137,14 @@ If JParty says it did not catch speech, check that whisper.cpp is running:
 curl http://127.0.0.1:8082
 ```
 
-If the host does not speak, check the Kokoro TTS server:
+If the host does not speak, check the macOS TTS bridge:
 
 ```bash
+curl http://127.0.0.1:8880/health
 curl http://127.0.0.1:8880/v1/audio/voices
 ```
 
-If you are using KokoClone, check its adapter:
-
-```bash
-curl http://127.0.0.1:8892/health
-tail -80 /tmp/jparty-kokoclone-adapter.log
-```
+If your Personal Voice does not appear, make sure it is finished processing and **Allow applications to use your Personal Voice** is enabled in macOS Accessibility settings.
 
 If judging is slow, switch to:
 

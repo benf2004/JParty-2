@@ -31,21 +31,24 @@ DEFAULT_AUTO_HOST_CONFIG = {
     "local_stt_base_url": "http://localhost:8082/v1",
     "local_stt_model": "whisper",
     "local_tts_base_url": "http://localhost:8880/v1",
-    "local_tts_model": "kokoro",
-    "local_tts_preset": "kokoro",
-    "local_tts_voice": "af_heart",
-    "local_tts_clone_voice": "my_voice",
+    "local_tts_model": "macos-say",
+    "local_tts_preset": "macos_personal_voice",
+    "local_tts_voice": "",
     "selection_mode": "voice_with_gui_fallback",
     "answer_judging": "auto_with_challenge",
     "leniency": "normal",
     "auto_judge_confidence": 0.82,
     "host_review_confidence": 0.55,
+    "speech_normalization": True,
 }
 
 HOST_TTS_INSTRUCTIONS = (
-    "Sound like a warm, lively game-show host. Keep the pace brisk, upbeat, "
-    "clear, and playful without adding extra words."
+    "Sound like a warm, lively game-show host with natural rises and pauses. "
+    "Keep the pace upbeat and clear, add a touch of anticipation, and do not "
+    "add extra words."
 )
+
+DEFAULT_HOST_TTS_SPEED = 1.12
 
 CORRECT_FEEDBACK_LINES = [
     "Yes! That's right, {player}.",
@@ -110,6 +113,7 @@ class AutoHostAI:
         self.config.update(config or {})
         self.provider = self.config.get("ai_provider", "openai")
         self._speech_lock = threading.Lock()
+        self._speech_normalization_cache = {}
 
     def api_key(self):
         return os.environ.get("OPENAI_API_KEY") or self.config.get("openai_api_key", "")
@@ -204,7 +208,7 @@ class AutoHostAI:
 
         voice = self.config.get("tts_voice", "coral")
         model = os.environ.get("JPARTY_TTS_MODEL", "gpt-4o-mini-tts")
-        speed = 1.3
+        speed = self._tts_speed()
         cache_dir = os.path.join(user_data_dir, "auto_host_audio_cache")
         os.makedirs(cache_dir, exist_ok=True)
         cache_key = hashlib.sha256(
@@ -408,14 +412,15 @@ class AutoHostAI:
             return None
 
     def _local_speech_file(self, text, purpose):
-        voice = self.config.get("local_tts_voice", "af_heart")
-        model = self.config.get("local_tts_model", "kokoro")
+        voice = self.config.get("local_tts_voice", "")
+        model = self.config.get("local_tts_model", "macos-say")
         base_url = self._normalize_base_url(self.config.get("local_tts_base_url"))
+        speed = self._tts_speed()
         spoken_text = self._tts_spoken_text(text, model)
         cache_dir = os.path.join(user_data_dir, "auto_host_audio_cache")
         os.makedirs(cache_dir, exist_ok=True)
         cache_key = hashlib.sha256(
-            f"local|{base_url}|{model}|{voice}|{purpose}|{spoken_text}".encode("utf-8")
+            f"local|{base_url}|{model}|{voice}|{speed}|{purpose}|{spoken_text}".encode("utf-8")
         ).hexdigest()
         path = os.path.join(cache_dir, f"{cache_key}.wav")
         if os.path.exists(path) and os.path.getsize(path) > 0:
@@ -424,11 +429,11 @@ class AutoHostAI:
         with self._speech_lock:
             if os.path.exists(path) and os.path.getsize(path) > 0:
                 return path
-            return self._generate_local_speech_file(base_url, model, voice, spoken_text, path)
+            return self._generate_local_speech_file(base_url, model, voice, speed, spoken_text, path)
 
-    def _generate_local_speech_file(self, base_url, model, voice, text, path):
+    def _generate_local_speech_file(self, base_url, model, voice, speed, text, path):
         try:
-            response = self._post_local_speech(base_url, model, voice, text)
+            response = self._post_local_speech(base_url, model, voice, speed, text)
             if not response.ok:
                 logging.error(
                     "Auto Host local TTS returned %s from %s: %s",
@@ -446,7 +451,7 @@ class AutoHostAI:
             logging.warning("Auto Host local TTS generation skipped: %s", exc)
             return None
 
-    def _post_local_speech(self, base_url, request_model, voice, text):
+    def _post_local_speech(self, base_url, request_model, voice, speed, text):
         timeout = float(os.environ.get("JPARTY_LOCAL_TTS_TIMEOUT", self._local_tts_default_timeout(base_url)))
         attempts = int(os.environ.get("JPARTY_LOCAL_TTS_ATTEMPTS", "2"))
         last_error = None
@@ -460,7 +465,7 @@ class AutoHostAI:
                         "voice": voice,
                         "input": text,
                         "response_format": "wav",
-                        "speed": 1.3,
+                        "speed": speed,
                     },
                     timeout=timeout,
                 )
@@ -477,29 +482,24 @@ class AutoHostAI:
         raise last_error
 
     def _local_tts_default_timeout(self, base_url):
-        return "120" if self.uses_cloned_local_tts(base_url=base_url) else "45"
-
-    def uses_cloned_local_tts(self, base_url=None):
-        if self.provider != "local":
-            return False
-        preset = self.config.get("local_tts_preset", "")
-        model = self.config.get("local_tts_model", "")
-        base_url = base_url or self.config.get("local_tts_base_url", "")
-        return (
-            preset == "kokoclone_clone"
-            or model == "kokoclone"
-            or "8892" in str(base_url)
-        )
+        return "45"
 
     def should_preload_audio(self):
-        return not self.uses_cloned_local_tts()
+        return True
+
+    def should_preload_speech_text(self):
+        return (
+            self.provider == "local"
+            and self.config.get("speech_normalization", True)
+            and requests is not None
+        )
 
     def _tts_spoken_text(self, text, model):
         text = html.unescape(text or "")
         text = re.sub(r"<[^>]+>", " ", text)
         text = text.replace("_", " ")
         text = re.sub(r"\s+", " ", text).strip()
-        if model in ("kokoro", "kokoclone"):
+        if model in ("kokoro",):
             text = self._soften_all_caps_for_tts(text)
         return text
 
@@ -516,6 +516,119 @@ class AutoHostAI:
             return word.lower()
 
         return re.sub(r"\b[A-Z][A-Z0-9'-]{2,}\b", replace_word, text)
+
+    def normalize_clue_for_speech(self, text):
+        original = html.unescape(text or "")
+        original = re.sub(r"<[^>]+>", " ", original)
+        original = re.sub(r"\s+", " ", original).strip()
+        fallback = self._basic_speech_normalize(original)
+        if (
+            not self.config.get("speech_normalization", True)
+            or self.provider != "local"
+            or requests is None
+        ):
+            return fallback
+
+        base_url = self._normalize_base_url(self.config.get("local_llm_base_url"))
+        model = self.config.get("local_llm_model", "qwen2.5:7b")
+        cache_key = (base_url, model, original)
+        if cache_key in self._speech_normalization_cache:
+            return self._speech_normalization_cache[cache_key]
+
+        normalized = self._local_normalize_speech_text(original)
+        if normalized:
+            normalized = self._basic_speech_normalize(normalized)
+        if not self._plausible_speech_normalization(original, normalized):
+            normalized = fallback
+        self._speech_normalization_cache[cache_key] = normalized
+        return normalized
+
+    def _local_normalize_speech_text(self, text):
+        prompt = (
+            "You prepare Jeopardy clues for text-to-speech. Rewrite only the clue "
+            "so it sounds natural when spoken. Expand abbreviations, symbols, "
+            "initialisms with periods, and number shorthand like \"No. 1\" into "
+            "\"number one\". Preserve the clue's meaning and facts. Do not answer "
+            "the clue. Do not add commentary. Return only JSON with this exact "
+            "shape: {\"spoken_text\": \"...\"}.\n"
+            f"Clue: {text}"
+        )
+        data = self._local_chat_json(
+            prompt,
+            timeout=float(os.environ.get("JPARTY_LOCAL_SPEECH_NORMALIZE_TIMEOUT", "15")),
+        )
+        if not data:
+            return None
+        return str(data.get("spoken_text", "")).strip()
+
+    def _basic_speech_normalize(self, text):
+        text = html.unescape(text or "")
+        text = re.sub(r"<[^>]+>", " ", text)
+
+        def number_abbrev(match):
+            number_text = match.group(1)
+            return f"number {self._small_number_to_words(number_text) or number_text}"
+
+        replacements = [
+            (r"\b[Nn]o\.\s*(\d+)\b", number_abbrev),
+            (r"#\s*(\d+)\b", number_abbrev),
+            (r"\b[Ss]t\.", "Saint"),
+            (r"\b[Mm]t\.", "Mount"),
+            (r"\b[Dd]r\.", "Doctor"),
+            (r"\b[Mm]r\.", "Mister"),
+            (r"\b[Mm]rs\.", "Misses"),
+            (r"\b[Mm]s\.", "Miz"),
+            (r"\b[Jj]r\.", "Junior"),
+            (r"\b[Ss]r\.", "Senior"),
+            (r"\be\.g\.", "for example"),
+            (r"\bi\.e\.", "that is"),
+        ]
+        for pattern, replacement in replacements:
+            text = re.sub(pattern, replacement, text)
+        text = text.replace("&", " and ")
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _small_number_to_words(self, value):
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return None
+        words = {
+            0: "zero",
+            1: "one",
+            2: "two",
+            3: "three",
+            4: "four",
+            5: "five",
+            6: "six",
+            7: "seven",
+            8: "eight",
+            9: "nine",
+            10: "ten",
+            11: "eleven",
+            12: "twelve",
+            13: "thirteen",
+            14: "fourteen",
+            15: "fifteen",
+            16: "sixteen",
+            17: "seventeen",
+            18: "eighteen",
+            19: "nineteen",
+            20: "twenty",
+        }
+        return words.get(number)
+
+    def _plausible_speech_normalization(self, original, normalized):
+        if not normalized:
+            return False
+        if "{" in normalized or "}" in normalized:
+            return False
+        if len(normalized) > max(len(original) * 3, len(original) + 120):
+            return False
+        return True
+
+    def _tts_speed(self):
+        return float(os.environ.get("JPARTY_TTS_SPEED", DEFAULT_HOST_TTS_SPEED))
 
     def _openai_json(self, prompt, response_format, api_key, timeout=30):
         try:
@@ -844,9 +957,12 @@ class AutoHostController:
         threading.Thread(target=self._read_clue_then_open, args=(clue,), daemon=True).start()
 
     def preload_round_audio(self, board):
-        if not self.enabled or board is None or not self.ai.should_preload_audio():
+        if not self.enabled or board is None:
             return
-        threading.Thread(target=self._preload_round_audio, args=(board,), daemon=True).start()
+        include_audio = self.ai.should_preload_audio()
+        if not include_audio and not self.ai.should_preload_speech_text():
+            return
+        threading.Thread(target=self._preload_round_audio, args=(board, include_audio), daemon=True).start()
 
     def preload_buzz_acknowledgement(self, player):
         if not self.enabled or player is None or not self.ai.should_preload_audio():
@@ -862,16 +978,33 @@ class AutoHostController:
 
     def intro_text(self):
         board = self.game.current_round
-        categories = ", ".join(board.categories) if board is not None else "today's categories"
+        categories = self.category_announcement_text(getattr(board, "categories", []))
         player_name = self._player_name(self.player_in_control)
         return (
-            "Welcome to JParty. I am your AI host for this game. "
-            f"Today's categories are: {categories}. "
+            "Welcome to JParty. I'll be your host for this game. "
+            f"Today's categories are: {categories} "
             f"{player_name}, you joined first, so you have control. Please pick the first clue."
         )
 
     def clue_text(self, clue):
-        return clue.text
+        if clue is None:
+            return ""
+        cached = getattr(clue, "_auto_host_spoken_text", None)
+        if cached:
+            return cached
+        spoken_text = self.ai.normalize_clue_for_speech(getattr(clue, "text", ""))
+        setattr(clue, "_auto_host_spoken_text", spoken_text)
+        return spoken_text
+
+    def category_announcement_text(self, categories):
+        categories = [str(category).strip() for category in (categories or []) if str(category).strip()]
+        if not categories:
+            return "The categories are still loading."
+        labels = ["Category one", "Category two", "Category three", "Category four", "Category five", "Category six"]
+        return " ".join(
+            f"{labels[index] if index < len(labels) else 'Next category'}: {category}."
+            for index, category in enumerate(categories)
+        )
 
     def daily_double_prompt_text(self, player, max_wager):
         return (
@@ -896,11 +1029,14 @@ class AutoHostController:
     def next_clue_prompt_text(self):
         return random.choice(NEXT_CLUE_LINES).format(player=self._player_name(self.player_in_control))
 
-    def _preload_round_audio(self, board):
-        self.ai.speech_file(self.intro_text(), "intro")
+    def _preload_round_audio(self, board, include_audio=True):
+        if include_audio:
+            self.ai.speech_file(self.intro_text(), "intro")
         for clue in sorted(board.questions, key=lambda q: (q.index[1], q.index[0])):
             if not clue.complete:
-                self.ai.speech_file(self.clue_text(clue), f"clue-{clue.index[0]}-{clue.index[1]}")
+                text = self.clue_text(clue)
+                if include_audio:
+                    self.ai.speech_file(text, f"clue-{clue.index[0]}-{clue.index[1]}")
 
     def _play_intro_then_prompt(self):
         self._play_text_and_wait(self.intro_text(), "intro")
@@ -924,12 +1060,12 @@ class AutoHostController:
         self.prompt_clue_selection()
 
     def round_intro_text(self, board):
-        categories = ", ".join(board.categories) if board is not None else "the new categories"
+        categories = self.category_announcement_text(getattr(board, "categories", []))
         player_name = self._player_name(self.player_in_control)
         round_name = "Double Jeopardy" if getattr(board, "dj", False) else "the next round"
         return (
             f"Great job so far. Welcome to {round_name}. "
-            f"The categories are: {categories}. "
+            f"The categories are: {categories} "
             f"{player_name}, you have control. Pick the next clue."
         )
 
@@ -937,7 +1073,7 @@ class AutoHostController:
         category = getattr(board, "category", None)
         if not category and getattr(board, "question", None) is not None:
             category = board.question.category
-        return f"Welcome to Final Jeopardy. The category is {category}. Please enter your wagers."
+        return f"Welcome to Final Jeopardy. The category is: {category}. Please enter your wagers."
 
     def final_clue_intro_text(self):
         return "All right, wagers are locked. Here is the Final Jeopardy clue."

@@ -36,21 +36,7 @@ fi
 
 stop_process "whisper-server" "whisper.cpp"
 stop_process "ollama serve" "Ollama"
-stop_process "local_macos_tts_server.py" "fallback macOS TTS"
-stop_process "kokoclone_openai_tts_adapter.py" "KokoClone adapter"
-
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  if docker ps --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
-    echo "Stopping Kokoro TTS..."
-    docker stop jparty-kokoro-tts >/dev/null || true
-  else
-    echo "Kokoro TTS is not running."
-  fi
-else
-  echo "Docker is not available or not running; skipping Kokoro stop."
-fi
-
-rm -f /tmp/jparty-kokoclone-adapter.pid
+stop_process "local_macos_tts_server.py" "macOS TTS"
 
 echo
 echo "Full local Auto Host services are stopped."

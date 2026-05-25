@@ -3,7 +3,6 @@ set -euo pipefail
 
 APP_SUPPORT="${HOME}/Library/Application Support/JParty/local-auto-host"
 REMOVE_PACKAGES="${JPARTY_UNINSTALL_PACKAGES:-ask}"
-REMOVE_DOCKER="${JPARTY_UNINSTALL_DOCKER:-ask}"
 
 usage() {
   cat <<EOF
@@ -12,7 +11,7 @@ Uninstall the full local Auto Host setup for macOS.
 This removes/stops:
   - Ollama service process used by the setup script
   - whisper.cpp server process
-  - Kokoro Docker container and image
+  - macOS TTS bridge process
   - downloaded JParty Whisper model files
   - optional Homebrew packages installed for local Auto Host
 
@@ -24,8 +23,7 @@ Usage:
 
 Optional non-interactive flags:
   JPARTY_UNINSTALL_PACKAGES=yes scripts/uninstall_full_local_auto_host_macos.sh
-  JPARTY_UNINSTALL_DOCKER=yes scripts/uninstall_full_local_auto_host_macos.sh
-  JPARTY_UNINSTALL_PACKAGES=no JPARTY_UNINSTALL_DOCKER=no scripts/uninstall_full_local_auto_host_macos.sh
+  JPARTY_UNINSTALL_PACKAGES=no scripts/uninstall_full_local_auto_host_macos.sh
 EOF
 }
 
@@ -40,14 +38,6 @@ should_remove_packages() {
     yes|true|1) return 0 ;;
     no|false|0) return 1 ;;
     *) confirm "Uninstall Homebrew packages ollama, whisper-cpp, and ffmpeg if present?" ;;
-  esac
-}
-
-should_remove_docker() {
-  case "$REMOVE_DOCKER" in
-    yes|true|1) return 0 ;;
-    no|false|0) return 1 ;;
-    *) confirm "Uninstall Docker Desktop? This may affect other projects." ;;
   esac
 }
 
@@ -74,28 +64,7 @@ fi
 
 stop_process "ollama serve" "Ollama"
 stop_process "whisper-server" "whisper.cpp server"
-stop_process "local_macos_tts_server.py" "fallback macOS TTS server"
-stop_process "kokoclone_openai_tts_adapter.py" "KokoClone adapter"
-rm -f /tmp/jparty-kokoclone-adapter.pid
-
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  if docker ps -a --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
-    echo "Removing Kokoro TTS container..."
-    docker rm -f jparty-kokoro-tts >/dev/null || true
-  else
-    echo "Kokoro TTS container was not found."
-  fi
-
-  if docker image inspect ghcr.io/remsky/kokoro-fastapi-cpu:latest >/dev/null 2>&1; then
-    echo "Removing Kokoro TTS Docker image..."
-    docker rmi ghcr.io/remsky/kokoro-fastapi-cpu:latest >/dev/null || true
-  else
-    echo "Kokoro TTS Docker image was not found."
-  fi
-
-else
-  echo "Docker is not available or not running; skipping Kokoro Docker cleanup."
-fi
+stop_process "local_macos_tts_server.py" "macOS TTS server"
 
 if [[ -d "$APP_SUPPORT" ]]; then
   if confirm "Remove downloaded local Auto Host model files at ${APP_SUPPORT}?"; then
@@ -122,16 +91,6 @@ if command -v brew >/dev/null 2>&1; then
     echo "Kept Homebrew packages."
   fi
 
-  if should_remove_docker; then
-    if brew list --cask docker >/dev/null 2>&1; then
-      echo "Uninstalling Docker Desktop..."
-      brew uninstall --cask docker || true
-    else
-      echo "Docker Desktop is not installed with Homebrew cask."
-    fi
-  else
-    echo "Kept Docker Desktop."
-  fi
 else
   echo "Homebrew was not found; skipping package cleanup."
 fi

@@ -92,6 +92,7 @@ function answerForm(form) {
     }
     var answer = scope.find("input[name='answer']").val();
     send("ANSWER",answer);
+    scope.find("input[name='answer']").val("");
     document.activeElement.blur();
     if (scope.closest("#buzz-answer-panel").length) {
         $("#answer-record-status").text("Judging...");
@@ -510,10 +511,13 @@ var updater = {
                     load_page("wager");
                     break;
                 case "PROMPTANSWER":
+                    $(".answer-page input[name='answer']").val("");
                     load_page("answer");
                     break;
                 case "TOOLATE":
-                    answerForm();
+                    if (current_page === "answer") {
+                        answerForm($(".answer-page form.answer_form").first());
+                    }
                     break;
                 case "PROMPT_SELECT_CLUE":
                     var selectPayload = JSON.parse(jsondata.text);

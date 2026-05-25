@@ -13,7 +13,7 @@ from threading import Thread
 import socket
 
 from jparty.environ import root
-from jparty.game import Player
+from jparty.game import FinalBoard, Player
 from jparty.constants import MAXPLAYERS, PORT, HTTPS_PORT
 import json
 from jparty.utils import resource_path
@@ -382,10 +382,18 @@ class BuzzerController:
             self.game.wager_trigger.emit(i_player, amount)
 
     def answer(self, player, guess):
-        if self.game and self.game.auto_host.enabled and self.game.answering_player is player and self.game.active_question is not None:
+        if not self.game:
+            return
+        if isinstance(self.game.current_round, FinalBoard):
+            if getattr(player, "page", None) != "answer":
+                logging.info("Ignoring stale Final Jeopardy answer from %s", player)
+                return
+            self.game.answer(player, guess)
+            player.page = "null"
+        elif self.game.auto_host.enabled and self.game.answering_player is player and self.game.active_question is not None:
             self.game.auto_host.receive_text_answer(player, guess)
             player.page = "null"
-        elif self.game:
+        else:
             self.game.answer(player, guess)
             player.page = "null"
 

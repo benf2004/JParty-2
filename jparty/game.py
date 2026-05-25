@@ -576,7 +576,7 @@ class Game(QObject):
         # clear stats
         for player in self.players:
             self.dc.player_widget(player).clear_stats()
-        if self.auto_host.enabled and round_complete and getattr(self.current_round, "dj", False):
+        if self.auto_host.enabled and round_complete:
             self.next_round()
             return
         self.auto_host.after_back_to_board()
@@ -624,6 +624,10 @@ class Game(QObject):
 
     def start_final(self):
         logging.info("start final")
+
+        for player in self.players:
+            player.wager = None
+            player.finalanswer = ""
 
         if self.config.get('allownegativeinfinal', 'True') == 'True':
             for player in self.players:

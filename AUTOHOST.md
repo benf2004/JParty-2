@@ -147,7 +147,7 @@ Local STT model: whisper
 
 Good local STT families to look for are `whisper.cpp` and `faster-whisper`. If STT is not running or fails, JParty asks the player to retry or use the on-screen fallback.
 
-For a fuller beginner path that installs and starts local Whisper speech-to-text and Kokoro text-to-speech too, use:
+For a fuller beginner path that installs and starts local Whisper speech-to-text and the macOS Personal Voice bridge too, use:
 
 ```bash
 scripts/setup_full_local_auto_host_macos.sh
@@ -155,11 +155,11 @@ scripts/setup_full_local_auto_host_macos.sh
 
 After setup, use `scripts/start_full_local_auto_host_macos.sh` before playing and `scripts/stop_full_local_auto_host_macos.sh` when you are done.
 
-See `FULL_LOCAL_AUTOHOST.md` for the step-by-step version. See `VOICE_CLONE_AUTOHOST.md` if you want to use your own cloned host voice.
+See `FULL_LOCAL_AUTOHOST.md` for the step-by-step version and `PERSONAL_VOICE_AUTOHOST.md` for Personal Voice notes.
 
 ### Local Text-To-Speech
 
-Use a Kokoro-style local server that exposes an OpenAI-style endpoint:
+Use the built-in macOS speech bridge, which exposes an OpenAI-style endpoint:
 
 ```text
 POST /v1/audio/speech
@@ -169,8 +169,8 @@ JParty defaults:
 
 ```text
 Local TTS URL: http://localhost:8880/v1
-Local TTS model: kokoro
-Local TTS voice: af_heart
+Local TTS model: macos-say
+Local TTS voice: leave blank for the Mac default, or type your Personal Voice name
 ```
 
 If TTS is not running or fails, the game continues without spoken host audio.

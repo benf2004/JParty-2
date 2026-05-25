@@ -84,8 +84,8 @@ KOKORO_VOICE_OPTIONS = [
 ]
 
 LOCAL_TTS_PRESET_OPTIONS = [
+    ("macos_personal_voice", "macOS Personal Voice"),
     ("kokoro", "Kokoro voice"),
-    ("kokoclone_clone", "KokoClone cloned voice"),
     ("custom", "Custom local endpoint"),
 ]
 
@@ -770,12 +770,12 @@ class SettingsMenu(QDialog):
         if not current_tts_preset:
             current_tts_model = current_auto_host.get('local_tts_model', DEFAULT_CONFIG['auto_host']['local_tts_model'])
             current_tts_url = current_auto_host.get('local_tts_base_url', DEFAULT_CONFIG['auto_host']['local_tts_base_url'])
-            if current_tts_model == 'kokoclone' or current_tts_url.startswith('http://localhost:8892'):
-                current_tts_preset = 'kokoclone_clone'
+            if current_tts_model == 'macos-say':
+                current_tts_preset = 'macos_personal_voice'
             elif current_tts_model != DEFAULT_CONFIG['auto_host']['local_tts_model'] or current_tts_url != DEFAULT_CONFIG['auto_host']['local_tts_base_url']:
                 current_tts_preset = 'custom'
             else:
-                current_tts_preset = DEFAULT_CONFIG['auto_host'].get('local_tts_preset', 'kokoro')
+                current_tts_preset = DEFAULT_CONFIG['auto_host'].get('local_tts_preset', 'macos_personal_voice')
         current_tts_preset_index = self.local_tts_preset_combobox.findData(current_tts_preset)
         self.local_tts_preset_combobox.setCurrentIndex(max(0, current_tts_preset_index))
         local_tts_preset_layout = QHBoxLayout()
@@ -785,36 +785,31 @@ class SettingsMenu(QDialog):
         local_tts_model_label = QLabel("Local TTS model:", self)
         self.local_tts_model_input = QLineEdit(self)
         self.local_tts_model_input.setText(current_auto_host.get('local_tts_model', DEFAULT_CONFIG['auto_host']['local_tts_model']))
-        self.local_tts_model_input.setPlaceholderText("kokoro")
+        self.local_tts_model_input.setPlaceholderText("macos-say")
         local_tts_model_layout = QHBoxLayout()
         local_tts_model_layout.addWidget(local_tts_model_label)
         local_tts_model_layout.addWidget(self.local_tts_model_input)
 
-        local_tts_voice_label = QLabel("Local TTS voice:", self)
+        local_tts_voice_label = QLabel("Local TTS voice / Personal Voice name:", self)
         self.local_tts_voice_combobox = QComboBox(self)
-        self.local_tts_voice_combobox.setEditable(False)
+        self.local_tts_voice_combobox.setEditable(True)
         self.local_tts_voice_combobox.setMinimumWidth(360)
+        self.local_tts_voice_combobox.addItem("Use macOS default voice", "")
         for voice, description in KOKORO_VOICE_OPTIONS:
             self.local_tts_voice_combobox.addItem(f"{description} ({voice})", voice)
         current_local_voice = current_auto_host.get('local_tts_voice', DEFAULT_CONFIG['auto_host']['local_tts_voice'])
         current_local_voice_index = self.local_tts_voice_combobox.findData(current_local_voice)
         if current_local_voice_index < 0:
-            self.local_tts_voice_combobox.addItem(f"Custom configured voice ({current_local_voice})", current_local_voice)
+            self.local_tts_voice_combobox.addItem(current_local_voice, current_local_voice)
             current_local_voice_index = self.local_tts_voice_combobox.findData(current_local_voice)
         self.local_tts_voice_combobox.setCurrentIndex(max(0, current_local_voice_index))
+        if self.local_tts_voice_combobox.lineEdit() is not None:
+            self.local_tts_voice_combobox.lineEdit().setPlaceholderText("Exact Personal Voice name from say -v ?")
         local_tts_voice_layout = QHBoxLayout()
         local_tts_voice_layout.addWidget(local_tts_voice_label)
         local_tts_voice_layout.addWidget(self.local_tts_voice_combobox)
 
-        local_tts_clone_voice_label = QLabel("Cloned voice name:", self)
-        self.local_tts_clone_voice_input = QLineEdit(self)
-        self.local_tts_clone_voice_input.setText(current_auto_host.get('local_tts_clone_voice', DEFAULT_CONFIG['auto_host'].get('local_tts_clone_voice', 'my_voice')))
-        self.local_tts_clone_voice_input.setPlaceholderText("my_voice")
-        local_tts_clone_voice_layout = QHBoxLayout()
-        local_tts_clone_voice_layout.addWidget(local_tts_clone_voice_label)
-        local_tts_clone_voice_layout.addWidget(self.local_tts_clone_voice_input)
-
-        local_hint = QLabel("Local mode expects already-running OpenAI-compatible services. Use AUTOHOST.md or scripts/setup_local_auto_host_macos.sh to get started.", self)
+        local_hint = QLabel("For Personal Voice, create it in macOS Accessibility, allow applications to use it, then use the exact voice name shown by say -v ?. scripts/setup_full_local_auto_host_macos.sh starts the local Mac voice bridge.", self)
         local_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         local_hint.setWordWrap(True)
         local_hint.setPalette(hint_palette)
@@ -836,8 +831,6 @@ class SettingsMenu(QDialog):
             self.local_tts_model_input,
             local_tts_voice_label,
             self.local_tts_voice_combobox,
-            local_tts_clone_voice_label,
-            self.local_tts_clone_voice_input,
             local_hint,
         ])
 
@@ -850,10 +843,6 @@ class SettingsMenu(QDialog):
         self.local_tts_kokoro_widgets = [
             local_tts_voice_label,
             self.local_tts_voice_combobox,
-        ]
-        self.local_tts_clone_widgets = [
-            local_tts_clone_voice_label,
-            self.local_tts_clone_voice_input,
         ]
 
         # Add the horizontal layouts to the main layout
@@ -878,7 +867,6 @@ class SettingsMenu(QDialog):
         layout.addLayout(local_tts_url_layout)
         layout.addLayout(local_tts_model_layout)
         layout.addLayout(local_tts_voice_layout)
-        layout.addLayout(local_tts_clone_voice_layout)
         layout.addWidget(local_hint)
         self.auto_host_provider_combobox.currentTextChanged.connect(self.update_auto_host_provider_fields)
         self.local_tts_preset_combobox.currentTextChanged.connect(lambda _text: self.update_local_tts_fields())
@@ -916,13 +904,17 @@ class SettingsMenu(QDialog):
 
     def update_local_tts_fields(self):
         is_local = self.auto_host_provider_combobox.currentText() == "local"
-        preset = self.local_tts_preset_combobox.currentData() or "kokoro"
+        preset = self.local_tts_preset_combobox.currentData() or "macos_personal_voice"
         for widget in getattr(self, "local_tts_advanced_widgets", []):
             widget.setVisible(is_local and preset == "custom")
         for widget in getattr(self, "local_tts_kokoro_widgets", []):
-            widget.setVisible(is_local and preset in ("kokoro", "custom"))
-        for widget in getattr(self, "local_tts_clone_widgets", []):
-            widget.setVisible(is_local and preset == "kokoclone_clone")
+            widget.setVisible(is_local and preset in ("macos_personal_voice", "kokoro", "custom"))
+
+    def selected_local_tts_voice(self):
+        data = self.local_tts_voice_combobox.currentData()
+        if data is not None:
+            return data
+        return self.local_tts_voice_combobox.currentText().strip()
 
     def save_settings(self):
         logging.info("save_settings method called")  # Debugging line
@@ -963,27 +955,20 @@ class SettingsMenu(QDialog):
         auto_host['local_llm_model'] = self.local_llm_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_model']
         auto_host['local_stt_base_url'] = self.local_stt_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_base_url']
         auto_host['local_stt_model'] = self.local_stt_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_model']
-        tts_preset = self.local_tts_preset_combobox.currentData() or 'kokoro'
+        tts_preset = self.local_tts_preset_combobox.currentData() or 'macos_personal_voice'
         auto_host['local_tts_preset'] = tts_preset
-        auto_host['local_tts_clone_voice'] = self.local_tts_clone_voice_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_clone_voice']
-        if tts_preset == 'kokoclone_clone':
-            auto_host['local_tts_base_url'] = 'http://localhost:8892/v1'
-            auto_host['local_tts_model'] = 'kokoclone'
-            auto_host['local_tts_voice'] = auto_host['local_tts_clone_voice']
+        if tts_preset == 'macos_personal_voice':
+            auto_host['local_tts_base_url'] = DEFAULT_CONFIG['auto_host']['local_tts_base_url']
+            auto_host['local_tts_model'] = 'macos-say'
+            auto_host['local_tts_voice'] = self.selected_local_tts_voice()
         elif tts_preset == 'kokoro':
             auto_host['local_tts_base_url'] = DEFAULT_CONFIG['auto_host']['local_tts_base_url']
-            auto_host['local_tts_model'] = DEFAULT_CONFIG['auto_host']['local_tts_model']
-            auto_host['local_tts_voice'] = (
-                self.local_tts_voice_combobox.currentData()
-                or DEFAULT_CONFIG['auto_host']['local_tts_voice']
-            )
+            auto_host['local_tts_model'] = 'kokoro'
+            auto_host['local_tts_voice'] = self.selected_local_tts_voice() or 'af_heart'
         else:
             auto_host['local_tts_base_url'] = self.local_tts_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_base_url']
             auto_host['local_tts_model'] = self.local_tts_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_model']
-            auto_host['local_tts_voice'] = (
-                self.local_tts_voice_combobox.currentData()
-                or DEFAULT_CONFIG['auto_host']['local_tts_voice']
-            )
+            auto_host['local_tts_voice'] = self.selected_local_tts_voice()
         auto_host['selection_mode'] = 'voice_with_gui_fallback'
         auto_host['answer_judging'] = 'auto_with_challenge'
         auto_host['leniency'] = self.auto_host_leniency_combobox.currentText()

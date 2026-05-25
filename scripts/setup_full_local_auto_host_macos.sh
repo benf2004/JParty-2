@@ -7,8 +7,8 @@ STT_PORT="${JPARTY_LOCAL_STT_PORT:-8082}"
 STT_URL="http://localhost:${STT_PORT}/v1"
 TTS_PORT="${JPARTY_LOCAL_TTS_PORT:-8880}"
 TTS_URL="http://localhost:${TTS_PORT}/v1"
-TTS_MODEL="kokoro"
-TTS_VOICE="af_heart"
+TTS_MODEL="macos-say"
+TTS_VOICE="${JPARTY_MACOS_TTS_VOICE:-}"
 WHISPER_MODEL="${JPARTY_WHISPER_MODEL:-base.en}"
 APP_SUPPORT="${HOME}/Library/Application Support/JParty/local-auto-host"
 WHISPER_MODEL_FILE="${APP_SUPPORT}/models/ggml-${WHISPER_MODEL}.bin"
@@ -20,13 +20,13 @@ usage() {
 Set up a fully local beginner Auto Host stack on macOS:
   - Ollama local LLM for clue parsing and answer judging
   - whisper.cpp local Whisper server for speech-to-text
-  - Kokoro local TTS server for text-to-speech
-  - optional KokoClone clone TTS addon
+  - built-in macOS speech for text-to-speech, including Personal Voice
 
 Usage:
   scripts/setup_full_local_auto_host_macos.sh
   JPARTY_LOCAL_LLM_MODEL=llama3.2:3b scripts/setup_full_local_auto_host_macos.sh
   JPARTY_WHISPER_MODEL=small.en scripts/setup_full_local_auto_host_macos.sh
+  JPARTY_MACOS_TTS_VOICE="Your Personal Voice Name" scripts/setup_full_local_auto_host_macos.sh
 
 This script installs/checks Homebrew packages, downloads local models, starts
 local services, and prints the JParty settings to use. It does not edit your
@@ -58,21 +58,10 @@ install_brew_package_if_needed() {
   brew install "$package_name"
 }
 
-install_brew_cask_if_needed() {
-  local app_path="$1"
-  local cask_name="$2"
-  if [[ -e "$app_path" ]]; then
-    echo "$cask_name is already installed."
-    return
-  fi
-  echo "Installing $cask_name..."
-  brew install --cask "$cask_name"
-}
-
 wait_for_url() {
   local url="$1"
   local name="$2"
-  for _ in {1..15}; do
+  for _ in {1..30}; do
     if curl -fsS "$url" >/dev/null 2>&1; then
       echo "$name is reachable."
       return 0
@@ -94,26 +83,13 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if [[ "$(uname -m)" != "arm64" ]]; then
-  echo "Warning: this Mac is not Apple Silicon. Local models may be slower."
-fi
-
-ENABLE_VOICE_CLONE="${JPARTY_ENABLE_VOICE_CLONE:-ask}"
-if [[ "$ENABLE_VOICE_CLONE" == "ask" ]]; then
-  read -r -p "Would you like to set up KokoClone voice cloning for your own host voice? [y/N] " clone_answer
-  if [[ "$clone_answer" =~ ^[Yy]$ ]]; then
-    ENABLE_VOICE_CLONE="yes"
-  else
-    ENABLE_VOICE_CLONE="no"
-  fi
+  echo "Warning: Personal Voice requires Apple silicon. Local models may also be slower on this Mac."
 fi
 
 install_homebrew_if_needed
 install_brew_package_if_needed ollama ollama
 install_brew_package_if_needed ffmpeg ffmpeg
 install_brew_package_if_needed whisper-server whisper-cpp
-if [[ ! "$ENABLE_VOICE_CLONE" =~ ^(yes|true|1)$ ]]; then
-  install_brew_cask_if_needed "/Applications/Docker.app" docker
-fi
 
 mkdir -p "${APP_SUPPORT}/models"
 
@@ -148,58 +124,26 @@ if ! curl -fsS "http://127.0.0.1:${STT_PORT}" >/dev/null 2>&1; then
 fi
 wait_for_url "http://127.0.0.1:${STT_PORT}" "whisper.cpp"
 
-if [[ "$ENABLE_VOICE_CLONE" =~ ^(yes|true|1)$ ]]; then
-  "${SCRIPT_DIR}/voice_clone/setup_kokoclone_auto_host_macos.sh"
-  VOICE_ENV="${APP_SUPPORT}/kokoclone/kokoclone.env"
-  if [[ -f "$VOICE_ENV" ]]; then
-    source "$VOICE_ENV"
-    TTS_PORT="${JPARTY_KOKOCLONE_PORT:-8892}"
-    TTS_URL="${JPARTY_KOKOCLONE_URL:-http://localhost:${TTS_PORT}/v1}"
-    TTS_MODEL="${JPARTY_KOKOCLONE_MODEL:-kokoclone}"
-    TTS_VOICE="${JPARTY_KOKOCLONE_VOICE:-my_voice}"
-  fi
-else
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker command was not found after installing Docker Desktop."
-    echo "Open Docker Desktop once, finish its setup, then rerun this script."
-    exit 1
-  fi
-
-  if ! docker info >/dev/null 2>&1; then
-    echo "Docker Desktop is not running. Opening it now..."
-    open -a Docker || true
-    echo "Waiting for Docker Desktop to start. This can take a minute the first time."
-    for _ in {1..90}; do
-      if docker info >/dev/null 2>&1; then
-        break
-      fi
-      sleep 2
-    done
-  fi
-
-  if ! docker info >/dev/null 2>&1; then
-    echo "Docker Desktop did not become ready."
-    echo "Open Docker Desktop, finish any first-run prompts, then rerun this script."
-    exit 1
-  fi
-
-  if docker ps --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
-    echo "Kokoro TTS container is already running."
-  elif docker ps -a --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
-    echo "Starting existing Kokoro TTS container..."
-    docker start jparty-kokoro-tts >/dev/null
-  else
-    echo "Starting Kokoro TTS container. The image download can take a while the first time."
-    docker run -d \
-      --name jparty-kokoro-tts \
-      -p "127.0.0.1:${TTS_PORT}:8880" \
-      ghcr.io/remsky/kokoro-fastapi-cpu:latest >/dev/null
-  fi
-  wait_for_url "http://127.0.0.1:${TTS_PORT}/v1/audio/voices" "Kokoro TTS"
+if ! curl -fsS "http://127.0.0.1:${TTS_PORT}/health" >/dev/null 2>&1; then
+  echo "Starting built-in macOS TTS bridge in the background..."
+  nohup python3 "${SCRIPT_DIR}/local_macos_tts_server.py" \
+    --host 127.0.0.1 \
+    --port "$TTS_PORT" \
+    >/tmp/jparty-macos-tts.log 2>&1 &
 fi
+wait_for_url "http://127.0.0.1:${TTS_PORT}/health" "macOS TTS"
+
+echo
+echo "Visible macOS speech voices:"
+python3 "${SCRIPT_DIR}/local_macos_tts_server.py" --list-voices | sed -n '1,20p'
 
 echo
 echo "Fully local Auto Host setup is running."
+echo
+echo "For your own Personal Voice:"
+echo "  1. Create it in System Settings > Accessibility > Personal Voice."
+echo "  2. Turn on Allow applications to use your Personal Voice."
+echo "  3. Use the exact voice name from the list above as Local TTS voice."
 echo
 echo "Use these JParty Settings:"
 echo "  Auto Host AI provider: local"
@@ -207,18 +151,19 @@ echo "  Local LLM URL: $LLM_URL"
 echo "  Local LLM model: $LLM_MODEL"
 echo "  Local STT URL: $STT_URL"
 echo "  Local STT model: whisper"
+echo "  Local TTS: macOS Personal Voice"
 echo "  Local TTS URL: $TTS_URL"
 echo "  Local TTS model: $TTS_MODEL"
-echo "  Local TTS voice: $TTS_VOICE"
+if [[ -n "$TTS_VOICE" ]]; then
+  echo "  Local TTS voice: $TTS_VOICE"
+else
+  echo "  Local TTS voice: leave blank for the Mac default, or type your Personal Voice name"
+fi
 echo
 echo "Logs:"
 echo "  Ollama: /tmp/jparty-ollama.log"
 echo "  Whisper: /tmp/jparty-whisper-server.log"
-echo "  TTS: docker logs jparty-kokoro-tts"
-echo "  KokoClone: /tmp/jparty-kokoclone-adapter.log"
+echo "  macOS TTS: /tmp/jparty-macos-tts.log"
 echo
 echo "To stop the background services later:"
-echo "  pkill -f 'ollama serve'"
-echo "  pkill -f 'whisper-server'"
-echo "  docker stop jparty-kokoro-tts"
-echo "  scripts/voice_clone.sh stop-kokoclone"
+echo "  scripts/stop_full_local_auto_host_macos.sh"

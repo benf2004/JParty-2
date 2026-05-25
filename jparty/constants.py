@@ -32,7 +32,7 @@ DEFAULT_CONFIG = {
     'local_stt_model': 'whisper',
     'local_tts_base_url': 'http://localhost:8880/v1',
     'local_tts_model': 'macos-say',
-    'local_tts_preset': 'macos_personal_voice',
+    'local_tts_preset': 'macos_say',
     'local_tts_voice': '',
     'selection_mode': 'voice_with_gui_fallback',
     'answer_judging': 'auto_with_challenge',

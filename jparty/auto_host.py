@@ -32,7 +32,7 @@ DEFAULT_AUTO_HOST_CONFIG = {
     "local_stt_model": "whisper",
     "local_tts_base_url": "http://localhost:8880/v1",
     "local_tts_model": "macos-say",
-    "local_tts_preset": "macos_personal_voice",
+    "local_tts_preset": "macos_say",
     "local_tts_voice": "",
     "selection_mode": "voice_with_gui_fallback",
     "answer_judging": "auto_with_challenge",
@@ -435,6 +435,15 @@ class AutoHostAI:
         try:
             response = self._post_local_speech(base_url, model, voice, speed, text)
             if not response.ok:
+                if (
+                    model == "macos-say"
+                    and "Unsupported model: macos-say" in getattr(response, "text", "")
+                ):
+                    logging.error(
+                        "Auto Host is configured for macOS Personal Voice, but %s is not the macOS say bridge. "
+                        "Run scripts/stop_full_local_auto_host_macos.sh, then scripts/start_full_local_auto_host_macos.sh.",
+                        base_url,
+                    )
                 logging.error(
                     "Auto Host local TTS returned %s from %s: %s",
                     response.status_code,
@@ -1000,11 +1009,7 @@ class AutoHostController:
         categories = [str(category).strip() for category in (categories or []) if str(category).strip()]
         if not categories:
             return "The categories are still loading."
-        labels = ["Category one", "Category two", "Category three", "Category four", "Category five", "Category six"]
-        return " ".join(
-            f"{labels[index] if index < len(labels) else 'Next category'}: {category}."
-            for index, category in enumerate(categories)
-        )
+        return " ".join(f"{category}." for category in categories)
 
     def daily_double_prompt_text(self, player, max_wager):
         return (

@@ -38,5 +38,10 @@ stop_process "whisper-server" "whisper.cpp"
 stop_process "ollama serve" "Ollama"
 stop_process "local_macos_tts_server.py" "macOS TTS"
 
+if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
+  echo "Stopping old Kokoro TTS container on port 8880..."
+  docker stop jparty-kokoro-tts >/dev/null || true
+fi
+
 echo
 echo "Full local Auto Host services are stopped."

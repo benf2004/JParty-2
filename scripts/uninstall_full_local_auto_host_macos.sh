@@ -66,6 +66,17 @@ stop_process "ollama serve" "Ollama"
 stop_process "whisper-server" "whisper.cpp server"
 stop_process "local_macos_tts_server.py" "macOS TTS server"
 
+if command -v docker >/dev/null 2>&1; then
+  if docker ps -a --format '{{.Names}}' | grep -qx 'jparty-kokoro-tts'; then
+    echo "Removing old Kokoro TTS container..."
+    docker rm -f jparty-kokoro-tts >/dev/null || true
+  fi
+  if docker image inspect ghcr.io/remsky/kokoro-fastapi-cpu:latest >/dev/null 2>&1; then
+    echo "Removing old Kokoro TTS image..."
+    docker rmi ghcr.io/remsky/kokoro-fastapi-cpu:latest >/dev/null || true
+  fi
+fi
+
 if [[ -d "$APP_SUPPORT" ]]; then
   if confirm "Remove downloaded local Auto Host model files at ${APP_SUPPORT}?"; then
     rm -rf "$APP_SUPPORT"

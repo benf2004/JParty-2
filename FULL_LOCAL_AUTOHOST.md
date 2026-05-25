@@ -7,6 +7,7 @@ This guide gets Auto Host running without paid AI APIs. Everything runs on your 
 - **Ollama** runs the local LLM. JParty uses it to understand clue choices, normalize clue speech, and judge ambiguous answers.
 - **whisper.cpp** runs Whisper locally. JParty uses it to turn player microphone recordings into text.
 - **macOS speech** speaks host lines through Apple's built-in speech system, including your Personal Voice when macOS exposes it to apps.
+- **Kokoro** is an optional local TTS voice server if you prefer it over macOS Say.
 - **ffmpeg** converts generated speech into WAV audio that JParty can play.
 
 JParty does not secretly install or launch these during a game. You run the setup script yourself, and the script starts local services on your computer.
@@ -42,15 +43,16 @@ That script will:
 3. Install/check Ollama, whisper.cpp, and ffmpeg.
 4. Download a local Whisper model.
 5. Pull a local Ollama model.
-6. Start the local LLM, STT, and macOS TTS bridge.
-7. Print the exact JParty settings to use.
+6. Ask whether you want macOS Say or Kokoro for local TTS.
+7. Start the local LLM, STT, and selected TTS service.
+8. Print the exact JParty settings to use.
 
 The default choices are meant for a 16 GB Apple Silicon Mac:
 
 ```text
 LLM: qwen2.5:7b
 Whisper: base.en
-TTS: macOS Personal Voice through macos-say
+TTS: macOS Say / Personal Voice, or Kokoro if selected
 ```
 
 ## Smaller Or Larger Models
@@ -86,10 +88,17 @@ Local LLM URL: http://localhost:11434/v1
 Local LLM model: qwen2.5:7b
 Local STT URL: http://localhost:8082/v1
 Local STT model: whisper
-Local TTS: macOS Personal Voice
+Local TTS: macOS Say / Personal Voice
 Local TTS URL: http://localhost:8880/v1
 Local TTS model: macos-say
-Local TTS voice: your Personal Voice name, or blank for the Mac default
+macOS Say voice: Custom / Personal Voice, then your exact Personal Voice name
+```
+
+If you choose Kokoro in the setup script, use:
+
+```text
+Local TTS: Kokoro
+Kokoro voice: af_heart
 ```
 
 ## What Runs Where
@@ -101,7 +110,7 @@ Player phone audio
   -> transcript text
   -> Ollama at http://localhost:11434/v1/chat/completions
   -> judgement, clue choice, or clue speech normalization
-  -> macOS TTS at http://localhost:8880/v1/audio/speech
+  -> selected TTS at http://localhost:8880/v1/audio/speech
   -> host voice from computer speakers
 ```
 
@@ -142,6 +151,13 @@ If the host does not speak, check the macOS TTS bridge:
 ```bash
 curl http://127.0.0.1:8880/health
 curl http://127.0.0.1:8880/v1/audio/voices
+```
+
+The `/health` response should include `"engine": "macos-say"`. If JParty logs `Unsupported model: macos-say`, an old TTS server is still running on port `8880`. Run:
+
+```bash
+scripts/stop_full_local_auto_host_macos.sh
+scripts/start_full_local_auto_host_macos.sh
 ```
 
 If your Personal Voice does not appear, make sure it is finished processing and **Allow applications to use your Personal Voice** is enabled in macOS Accessibility settings.

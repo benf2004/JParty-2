@@ -41,10 +41,26 @@ Use:
 
 ```text
 Auto Host AI provider: local
-Local TTS: macOS Personal Voice
+Local TTS: macOS Say / Personal Voice
 Local TTS URL: http://localhost:8880/v1
 Local TTS model: macos-say
-Local TTS voice: the exact Personal Voice name from say -v ?
+macOS Say voice: Custom / Personal Voice
+Custom macOS voice name: the exact Personal Voice name from say -v ?
 ```
 
 If you leave the voice blank, macOS uses its current default speech voice.
+
+## Wrong Server On Port 8880
+
+If JParty logs `Unsupported model: macos-say`, port `8880` is still being served by an older TTS server. Restart the local services:
+
+```bash
+scripts/stop_full_local_auto_host_macos.sh
+scripts/start_full_local_auto_host_macos.sh
+```
+
+The bridge health check should say `"engine": "macos-say"`:
+
+```bash
+curl http://127.0.0.1:8880/health
+```

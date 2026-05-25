@@ -670,7 +670,7 @@ class AutoHostTests(unittest.TestCase):
 
         text = controller.category_announcement_text(["Computers", "History"])
 
-        self.assertEqual(text, "Category one: Computers. Category two: History.")
+        self.assertEqual(text, "Computers. History.")
 
     def test_local_tts_retries_connection_failure_once(self):
         ai = AutoHostAI({
@@ -707,7 +707,7 @@ class AutoHostTests(unittest.TestCase):
         ai = AutoHostAI({"ai_provider": "local"})
 
         self.assertEqual(ai.config["local_tts_model"], "macos-say")
-        self.assertEqual(ai.config["local_tts_preset"], "macos_personal_voice")
+        self.assertEqual(ai.config["local_tts_preset"], "macos_say")
         self.assertTrue(ai.should_preload_audio())
 
     def test_fast_judgement_skips_openai_for_exact_match(self):

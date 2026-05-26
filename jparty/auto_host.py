@@ -1154,6 +1154,8 @@ class AutoHostController:
             "answer": clue.answer,
             "value": clue.value,
             "awarded_player": awarded_player,
+            "answering_player": getattr(self.game, "answering_player", None),
+            "was_daily_double": bool(getattr(clue, "dd", False)),
             "was_correct": awarded_player is not None,
         }
 
@@ -1258,17 +1260,21 @@ class AutoHostController:
             return
         old_player = record.get("awarded_player")
         value = int(record.get("value", 0))
-        if old_player is not None:
-            self.game.set_score(old_player, old_player.score - value)
         new_player = None
-        if result.startswith("player:"):
+        if str(result).startswith("player:"):
             try:
                 new_player = self.game.players[int(result.split(":", 1)[1])]
             except (ValueError, IndexError):
                 new_player = None
+
+        if old_player is not None:
+            self.game.set_score(old_player, old_player.score - value)
+            if self._dispute_should_apply_incorrect_penalty(record, old_player, new_player):
+                self.game.set_score(old_player, old_player.score - value)
+
         if new_player is not None:
             correction = value
-            if not record.get("was_correct") and new_player is not old_player:
+            if self._dispute_should_restore_incorrect_penalty(record, new_player, old_player):
                 correction += value
             self.game.set_score(new_player, new_player.score + correction)
             self.game.set_player_in_control(new_player)
@@ -1277,8 +1283,37 @@ class AutoHostController:
         else:
             message = "Dispute accepted. Nobody receives the points."
         record["awarded_player"] = new_player
+        record["was_correct"] = new_player is not None
         self._send_dispute_result(message)
         threading.Thread(target=self._play_text_and_wait, args=(message, "dispute-result"), daemon=True).start()
+
+    def _dispute_should_apply_incorrect_penalty(self, record, old_player, new_player):
+        return (
+            bool(record.get("was_correct"))
+            and self._record_was_daily_double(record)
+            and self._wrong_answers_subtract_points()
+            and self._record_answering_player(record, old_player) is old_player
+            and new_player is not old_player
+        )
+
+    def _dispute_should_restore_incorrect_penalty(self, record, new_player, old_player):
+        if record.get("was_correct"):
+            return False
+        answering_player = record.get("answering_player")
+        if answering_player is None:
+            return new_player is not old_player
+        return self._wrong_answers_subtract_points() and new_player is answering_player
+
+    def _record_was_daily_double(self, record):
+        clue = record.get("clue")
+        return bool(record.get("was_daily_double", getattr(clue, "dd", False)))
+
+    def _record_answering_player(self, record, fallback=None):
+        return record.get("answering_player") or fallback
+
+    def _wrong_answers_subtract_points(self):
+        config = getattr(self.game, "config", {}) or {}
+        return str(config.get("allownegative", "True")).lower() == "true"
 
     def _send_dispute_result(self, message):
         for player in self.game.players:

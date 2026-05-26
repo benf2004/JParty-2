@@ -317,6 +317,7 @@ class AutoHostTests(unittest.TestCase):
             "answer": "Ada Lovelace",
             "value": 200,
             "awarded_player": None,
+            "answering_player": game.players[1],
             "was_correct": False,
         }
 
@@ -324,6 +325,27 @@ class AutoHostTests(unittest.TestCase):
 
         self.assertEqual(game.players[1].score, 200)
         self.assertIs(controller.player_in_control, game.players[1])
+
+    def test_daily_double_dispute_to_nobody_applies_incorrect_wager_penalty(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        clue = game.current_round.questions[0]
+        clue.dd = True
+        clue.value = 800
+        game.players[0].score = 800
+        controller.last_resolved_clue = {
+            "clue": clue,
+            "answer": "Ada Lovelace",
+            "value": 800,
+            "awarded_player": game.players[0],
+            "answering_player": game.players[0],
+            "was_daily_double": True,
+            "was_correct": True,
+        }
+
+        controller.apply_dispute_result("nobody")
+
+        self.assertEqual(game.players[0].score, -800)
 
     def test_dispute_reassigns_single_value_after_prior_correct_award(self):
         game = FakeGame()

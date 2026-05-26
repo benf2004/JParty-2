@@ -112,6 +112,15 @@ class FakeBoard:
         return None
 
 
+def fake_final_board():
+    board = type("FinalBoard", (), {})()
+    board.categories = ["Final Jeopardy"]
+    board.category = "Final Jeopardy"
+    board.question = FakeQuestion()
+    board.questions = [board.question]
+    return board
+
+
 class FakeGame:
     def __init__(self):
         self.config = {"auto_host": {"enabled": True}}
@@ -842,6 +851,46 @@ class AutoHostTests(unittest.TestCase):
 
         self.assertEqual(played, ["correct-feedback", "next-clue"])
         self.assertIn("PROMPT_SELECT_CLUE", [message for message, _text in game.players[0].waiter.messages])
+
+    def test_correct_feedback_does_not_prompt_clue_selection_in_final(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.player_in_control = None
+        game.current_round = fake_final_board()
+        game.active_question = None
+        played = []
+        controller._play_text_and_wait = lambda text, purpose: played.append(purpose)
+
+        controller._speak_correct_then_prompt_next_clue(game.players[0])
+
+        self.assertEqual(played, ["correct-feedback"])
+        self.assertNotIn("PROMPT_SELECT_CLUE", [message for message, _text in game.players[0].waiter.messages])
+
+    def test_final_wager_prompt_survives_last_correct_judgement(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        player = game.players[0]
+
+        def advance_to_final():
+            game.correct_calls += 1
+            game.active_question = None
+            game.current_round = fake_final_board()
+            player.page = "wager"
+            player.waiter.send("PROMPTWAGER", str(max(player.score, 0)))
+
+        game.correct_answer = advance_to_final
+        controller.pending_judgement = {
+            "player": player,
+            "judgement": Judgement(True, 0.95, "Looks right", "Ada Lovelace"),
+        }
+
+        with patch("jparty.auto_host.threading.Thread") as thread_class:
+            controller.finalize_pending_judgement()
+
+        messages = [message for message, _text in player.waiter.messages]
+        self.assertIn("PROMPTWAGER", messages)
+        self.assertNotIn("JUDGEMENT_RESULT", messages)
+        thread_class.assert_not_called()
 
     def test_round_started_announces_double_jeopardy_before_prompt(self):
         game = FakeGame()

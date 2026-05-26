@@ -554,11 +554,11 @@ class AutoHostAI:
 
     def _local_normalize_speech_text(self, text):
         prompt = (
-            "You prepare Jeopardy clues for text-to-speech. Rewrite only the clue "
-            "so it sounds natural when spoken. Expand abbreviations, symbols, "
+            "You prepare Jeopardy clues for text-to-speech. Keep the clue EXACTLY the same "
+            "words, but change the abbreviations so that they are pronounced correctly when passed through text to speech. Expand abbreviations, symbols, "
             "initialisms with periods, and number shorthand like \"No. 1\" into "
             "\"number one\". Preserve the clue's meaning and facts. Do not answer "
-            "the clue. Do not add commentary. Return only JSON with this exact "
+            "the clue. Do not add commentary. Do not change anything else.Return only JSON with this exact "
             "shape: {\"spoken_text\": \"...\"}.\n"
             f"Clue: {text}"
         )
@@ -1492,15 +1492,16 @@ class AutoHostController:
             else:
                 self.speak_feedback(self.incorrect_feedback_text(), "incorrect-feedback")
             self.game.incorrect_answer()
-        if player.waiter:
+        final_wagering_started = self._current_round_is_final() and getattr(player, "page", None) == "wager"
+        if player.waiter and not final_wagering_started:
             player.waiter.send("JUDGEMENT_RESULT", json.dumps(judgement_payload))
-        if correct_prompt_player is not None:
+        if correct_prompt_player is not None and not self._current_round_is_final():
             threading.Thread(
                 target=self._speak_correct_then_prompt_next_clue,
                 args=(correct_prompt_player,),
                 daemon=True,
             ).start()
-        if daily_double_incorrect_clue is not None:
+        if daily_double_incorrect_clue is not None and not self._current_round_is_final():
             threading.Thread(
                 target=self._speak_daily_double_incorrect_then_prompt_next_clue,
                 args=(daily_double_incorrect_clue,),
@@ -1511,9 +1512,7 @@ class AutoHostController:
 
     def _speak_correct_then_prompt_next_clue(self, player):
         self._play_text_and_wait(self.correct_feedback_text(player), "correct-feedback")
-        if not self.enabled or self.game.active_question is not None:
-            return
-        if not self.game.current_round or all(q.complete for q in self.game.current_round.questions):
+        if not self._can_prompt_next_clue():
             return
         if self.player_in_control is None:
             self.player_in_control = player
@@ -1522,11 +1521,21 @@ class AutoHostController:
     def _speak_daily_double_incorrect_then_prompt_next_clue(self, clue):
         self._play_text_and_wait(self.incorrect_feedback_text(), "daily-double-incorrect-feedback")
         self._play_text_and_wait(self.stumped_text(clue), "daily-double-answer-reveal")
-        if not self.enabled or self.game.active_question is not None:
-            return
-        if not self.game.current_round or all(q.complete for q in self.game.current_round.questions):
+        if not self._can_prompt_next_clue():
             return
         self._speak_next_clue_then_prompt()
+
+    def _current_round_is_final(self):
+        board = getattr(self.game, "current_round", None)
+        return board is not None and board.__class__.__name__ == "FinalBoard"
+
+    def _can_prompt_next_clue(self):
+        board = getattr(self.game, "current_round", None)
+        if not self.enabled or getattr(self.game, "active_question", None) is not None:
+            return False
+        if board is None or board.__class__.__name__ == "FinalBoard":
+            return False
+        return not all(q.complete for q in getattr(board, "questions", []))
 
     def prompt_answer(self, player, auto_start=False, message="Speak now"):
         if not self.enabled or not player or not player.waiter:

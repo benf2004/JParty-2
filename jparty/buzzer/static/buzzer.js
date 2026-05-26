@@ -570,7 +570,11 @@ var updater = {
                     $("#judgement-reason").text(judgement.transcript);
                     resetBuzzAnswerPanel();
                     load_page("judgement");
-                    setTimeout(function() { load_page("buzz"); }, 1800);
+                    setTimeout(function() {
+                        if (current_page === "judgement") {
+                            load_page("buzz");
+                        }
+                    }, 1800);
                     break;
                 case "PROMPT_WAIT_ANSWER":
                     showBuzzAnswerWait(JSON.parse(jsondata.text || "{}"));

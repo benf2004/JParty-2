@@ -1,6 +1,6 @@
 import simpleaudio as sa
 
-from threading import Thread
+from threading import Lock, Thread
 import re
 import os
 import sys
@@ -58,6 +58,8 @@ class SongPlayer(object):
         self.__play_obj = None
         self.__repeating = False
         self.__repeat_thread = None
+        self.__lock = Lock()
+        self.__play_generation = 0
 
     def set_muted(self, muted):
         self.__muted = bool(muted)
@@ -65,34 +67,51 @@ class SongPlayer(object):
             self.stop()
 
     def play(self, repeat=False):
-        self.__repeating = repeat
-        if self.__muted:
-            return
-        self.__play_obj = self.__wave_obj.play()
-        if repeat:
-            self.__repeat_thread = Thread(target=self.__repeat)
-            self.__repeat_thread.start()
+        self.__play_wave(self.__wave_obj, repeat)
 
     def final(self, repeat=False):
-        self.__repeating = repeat
-        if self.__muted:
-            return
-        self.__play_obj = self.__final.play()
-        if repeat:
-            self.__repeat_thread = Thread(target=self.__repeat)
-            self.__repeat_thread.start()
+        self.__play_wave(self.__final, repeat)
+
+    def __play_wave(self, wave_obj, repeat=False):
+        self.stop()
+        with self.__lock:
+            self.__repeating = repeat
+            self.__play_generation += 1
+            generation = self.__play_generation
+            if self.__muted:
+                return
+            self.__play_obj = wave_obj.play()
+            if repeat:
+                self.__repeat_thread = Thread(
+                    target=self.__repeat, args=(wave_obj, generation), daemon=True
+                )
+                self.__repeat_thread.start()
 
     def stop(self):
-        self.__repeating = False
-        if self.__play_obj is not None:
-            self.__play_obj.stop()
+        with self.__lock:
+            self.__repeating = False
+            self.__play_generation += 1
+            play_obj = self.__play_obj
+        if play_obj is not None:
+            play_obj.stop()
 
-    def __repeat(self):
+    def __repeat(self, wave_obj, generation):
         while True:
-            self.__play_obj.wait_done()
-            if not self.__repeating:
+            with self.__lock:
+                play_obj = self.__play_obj
+                should_repeat = (
+                    self.__repeating and self.__play_generation == generation
+                )
+            if play_obj is None or not should_repeat:
                 break
-            self.__play_obj = self.__wave_obj.play()
+            play_obj.wait_done()
+            with self.__lock:
+                if not self.__repeating or self.__play_generation != generation:
+                    break
+                self.__play_obj = wave_obj.play()
+                play_obj = self.__play_obj
+            if play_obj is None:
+                break
 
 
 class CompoundObject(object):

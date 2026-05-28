@@ -52,7 +52,10 @@ class QuestionTimer(object):
 
     def pause(self):
         self.__thread = None
+        if self.__start_time is None:
+            return
         self.__elapsed_time += time.time() - self.__start_time
+        self.__start_time = None
 
     def resume(self):
         self.__thread = threading.Thread(
@@ -201,6 +204,30 @@ class Game(QObject):
     auto_final_incorrect_trigger = pyqtSignal()
     auto_start_game_trigger = pyqtSignal()
     auto_close_game_trigger = pyqtSignal()
+    FINAL_KEYSTROKE_EVENTS = (
+        "OPEN_FINAL",
+        "FINAL_OPEN_RESPONSES",
+        "FINAL_NEXT_PLAYER",
+        "FINAL_SHOW_ANSWER",
+        "FINAL_CORRECT_ANSWER",
+        "FINAL_INCORRECT_ANSWER",
+    )
+    TRANSIENT_KEYSTROKE_EVENTS = (
+        "CORRECT_ANSWER",
+        "INCORRECT_ANSWER",
+        "BACK_TO_BOARD",
+        "PLAY_AUDIO",
+        "OPEN_RESPONSES",
+        "NEXT_ROUND",
+        "OPEN_FINAL",
+        "CLOSE_GAME",
+        "FINAL_OPEN_RESPONSES",
+        "FINAL_NEXT_PLAYER",
+        "FINAL_SHOW_ANSWER",
+        "FINAL_CORRECT_ANSWER",
+        "FINAL_INCORRECT_ANSWER",
+        "ADMIN_SKIP_QUESTION",
+    )
 
     def __init__(self):
         super().__init__()
@@ -692,6 +719,7 @@ class Game(QObject):
             self.keystroke_manager.activate("OPEN_FINAL")
 
     def final_open_responses(self):
+        self.keystroke_manager.deactivate("FINAL_OPEN_RESPONSES")
         self.dc.hide_player_kick_buttons()
         self.dc.borders.lights(True)
         self.buzzer_controller.prompt_answers()
@@ -702,6 +730,7 @@ class Game(QObject):
         self.timer.start()
 
     def final_next_player(self):
+        self.keystroke_manager.deactivate("FINAL_NEXT_PLAYER")
         for p in self.players:
             self.dc.player_widget(p).set_lights(False)
 
@@ -723,6 +752,7 @@ class Game(QObject):
         self.keystroke_manager.activate("FINAL_SHOW_ANSWER")
 
     def final_show_answer(self):
+        self.keystroke_manager.deactivate("FINAL_SHOW_ANSWER")
         answer = self.answering_player.finalanswer
         if answer == "":
             answer = "________"
@@ -761,6 +791,7 @@ class Game(QObject):
             self.keystroke_manager.activate("FINAL_NEXT_PLAYER")
 
     def end_game(self):
+        self._deactivate_final_keystrokes()
         top_score = max([p.score for p in self.players])
         winners = [p for p in self.players if p.score == top_score]
         for w in winners:
@@ -783,6 +814,9 @@ class Game(QObject):
         self.keystroke_manager.activate("CLOSE_GAME")
 
     def close_game(self):
+        self._deactivate_transient_keystrokes()
+        if self.timer:
+            self.timer.cancel()
         self.song_player.stop()
         self.buzzer_controller.restart()
         self.players = []
@@ -793,6 +827,12 @@ class Game(QObject):
         self.__judgement_round = 0
         self.dc.restart()
         self.begin()
+
+    def _deactivate_final_keystrokes(self):
+        self.keystroke_manager.deactivate(*self.FINAL_KEYSTROKE_EVENTS)
+
+    def _deactivate_transient_keystrokes(self):
+        self.keystroke_manager.deactivate(*self.TRANSIENT_KEYSTROKE_EVENTS)
 
     def get_dd_wager(self, player):
         self.answering_player = player
@@ -833,6 +873,7 @@ class Game(QObject):
             self.keystroke_manager.activate("OPEN_RESPONSES")
 
     def open_final(self):
+        self.keystroke_manager.deactivate("OPEN_FINAL")
         self.dc.question_widget.show_question()
         self.play_sound("ding.wav")
         self.keystroke_manager.activate("FINAL_OPEN_RESPONSES")

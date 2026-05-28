@@ -7,11 +7,12 @@ from jparty.auto_host import AutoHostController, AutoHostAI, Judgement
 
 try:
     from jparty.controller import BuzzerController
-    from jparty.game import FinalBoard, Game
+    from jparty.game import FinalBoard, Game, KeystrokeManager
 except ModuleNotFoundError:
     BuzzerController = None
     FinalBoard = None
     Game = None
+    KeystrokeManager = None
 
 
 class FakeWaiter:
@@ -950,6 +951,58 @@ class AutoHostTests(unittest.TestCase):
 
         self.assertEqual(player.finalanswer, "real final answer")
         self.assertEqual(player.page, "null")
+
+    @unittest.skipIf(Game is None or KeystrokeManager is None, "PyQt6 game runtime is unavailable")
+    def test_end_game_disarms_stale_final_space_handlers_before_play_again(self):
+        game = Game.__new__(Game)
+        players = [FakePlayer("A"), FakePlayer("B")]
+        players[0].score = 1000
+        players[1].score = 500
+        game.players = players
+        game.auto_host = type("AutoHost", (), {"enabled": True})()
+        game.play_sound = lambda _file_name: None
+
+        class PlayerWidget:
+            def set_lights(self, _value):
+                pass
+
+        class FinalWindow:
+            def show_winner(self, _winner):
+                pass
+
+            def show_tie(self):
+                pass
+
+        class Display:
+            def __init__(self):
+                self.final_window = FinalWindow()
+
+            def player_widget(self, _player):
+                return PlayerWidget()
+
+        game.dc = Display()
+        game.keystroke_manager = KeystrokeManager()
+        calls = []
+        space_key = 32
+        hint = lambda _active: None
+        for event_name in Game.FINAL_KEYSTROKE_EVENTS:
+            game.keystroke_manager.addEvent(
+                event_name,
+                space_key,
+                lambda event_name=event_name: calls.append(event_name),
+                hint,
+            )
+        game.keystroke_manager.addEvent(
+            "CLOSE_GAME", space_key, lambda: calls.append("CLOSE_GAME"), hint
+        )
+        game.keystroke_manager.activate("FINAL_OPEN_RESPONSES", "FINAL_NEXT_PLAYER")
+
+        Game.end_game(game)
+        game.keystroke_manager.call(space_key)
+
+        self.assertEqual(calls, ["CLOSE_GAME"])
+        for player in players:
+            self.assertIn("PROMPT_PLAY_AGAIN", [message for message, _text in player.waiter.messages])
 
     def test_daily_double_amount_parsing(self):
         game = FakeGame()

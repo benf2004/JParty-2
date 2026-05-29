@@ -11,7 +11,6 @@ import simpleaudio as sa
 from collections.abc import Iterable
 import logging
 import json
-import requests
 import datetime
 import http.server
 import socketserver
@@ -23,6 +22,7 @@ from jparty.environ import root
 from jparty.stats import StatsBox
 from jparty.paths import config_path
 from jparty.auto_host import AutoHostController
+from jparty.image_fallback import NOT_FOUND_IMAGE_CONTENT, load_question_image
 
 
 class QuestionTimer(object):
@@ -677,25 +677,12 @@ class Game(QObject):
                 time.sleep(2)
 
     def load_image(self, question):
-        try:
-            logging.info(f"pre-loading image: {question.image_link}")
-            if isinstance(question.image_link, str) and question.image_link.lower().startswith(("http://", "https://")):
-                request = requests.get(question.image_link, timeout=1)
-                question.image_content = request.content
-            else:
-                with open(question.image_link, "rb") as image_file:
-                    question.image_content = image_file.read()
+        logging.info(f"pre-loading image: {question.image_link}")
+        question.image_content = load_question_image(question, self.config, timeout=1)
+        if question.image_content and question.image_content != NOT_FOUND_IMAGE_CONTENT:
             logging.info(f"loaded image: {question.image_link}")
-
-        except requests.Timeout:
-            # Some websites always timeout and load forever, maybe because it detects that it's a bot
-            # Set the image content to "Not Found" to avoid trying to load it again
-            logging.info(f"timed out loading image: {question.image_link}")
-            question.image_content = b"Not Found"
-        except requests.exceptions.RequestException as e:
+        else:
             logging.info(f"failed to load image: {question.image_link}")
-        except OSError:
-            logging.info(f"failed to load local image: {question.image_link}", exc_info=True)
 
     def wager(self, i_player, amount):
         player = self.players[i_player]

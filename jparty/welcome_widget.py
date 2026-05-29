@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QDialog,
     QComboBox,
+    QCheckBox,
     QPushButton,
     QFileDialog,
 )
@@ -38,6 +39,7 @@ from jparty.utils import resource_path, add_shadow, DynamicLabel, DynamicButton
 from jparty.helpmsg import helpmsg
 from jparty.style import WINDOWPAL
 from jparty.constants import DEFAULT_CONFIG, DESIGNER_URL
+from jparty.image_fallback import local_llm_available
 from jparty.paths import config_path, history_path
 
 AUTO_HOST_VOICE_OPTIONS = [
@@ -560,11 +562,13 @@ class SettingsMenu(QDialog):
         current_allownegative = config.get('allownegative', DEFAULT_CONFIG['allownegative'])
         current_allownegativeinfinal = config.get('allownegativeinfinal', DEFAULT_CONFIG['allownegativeinfinal'])
         current_use_wayback_first = config.get('use_wayback_first', DEFAULT_CONFIG['use_wayback_first'])
+        current_image_fallback = DEFAULT_CONFIG['image_fallback'].copy()
+        current_image_fallback.update(config.get('image_fallback', {}) or {})
         current_auto_host = DEFAULT_CONFIG['auto_host'].copy()
         current_auto_host.update(config.get('auto_host', {}) or {})
 
         self.setWindowTitle("Settings")
-        self.setFixedSize(560, 700)
+        self.setFixedSize(600, 760)
         layout = QVBoxLayout()
 
         def section_heading(text):
@@ -576,6 +580,7 @@ class SettingsMenu(QDialog):
             return label
 
         general_heading = section_heading("General")
+        images_heading = section_heading("Images")
         auto_host_heading = section_heading("Auto Host")
 
         # Add a label for the "Theme" section
@@ -680,6 +685,27 @@ class SettingsMenu(QDialog):
         wayback_layout = QHBoxLayout()
         wayback_layout.addWidget(wayback_label)
         wayback_layout.addWidget(self.wayback_combobox)
+
+        self.use_pexels_checkbox = QCheckBox("USE PEXELS API (requires OpenAI key or local LLM)", self)
+        self.use_pexels_checkbox.setChecked(bool(current_image_fallback.get('use_pexels', False)))
+        self.use_pexels_checkbox.setToolTip("Only replaces missing J-Archive media images.")
+
+        pexels_key_label = QLabel("Pexels API Key:", self)
+        self.pexels_api_key_input = QLineEdit(self)
+        self.pexels_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.pexels_api_key_input.setPlaceholderText("Pexels API key")
+        self.pexels_api_key_input.setText(current_image_fallback.get('pexels_api_key', ''))
+
+        pexels_key_layout = QHBoxLayout()
+        pexels_key_layout.addWidget(pexels_key_label)
+        pexels_key_layout.addWidget(self.pexels_api_key_input)
+
+        self.pexels_status_label = QLabel("", self)
+        self.pexels_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pexels_status_label.setWordWrap(True)
+        pexels_status_palette = self.pexels_status_label.palette()
+        pexels_status_palette.setColor(QPalette.ColorRole.WindowText, QColor(128, 128, 128))
+        self.pexels_status_label.setPalette(pexels_status_palette)
 
         # Add a label for the "allownegative" section
         allownegative_label = QLabel("Allow Negatives:", self)
@@ -797,6 +823,8 @@ class SettingsMenu(QDialog):
             self.openai_api_key_input,
             openai_key_hint,
         ]
+
+        self._pexels_local_llm_available = local_llm_available(current_auto_host)
 
         self.local_auto_host_widgets = []
 
@@ -971,6 +999,11 @@ class SettingsMenu(QDialog):
         layout.addLayout(allownegativeinfinal_layout)
         layout.addLayout(wayback_layout)
         layout.addSpacing(12)
+        layout.addWidget(images_heading)
+        layout.addWidget(self.use_pexels_checkbox)
+        layout.addLayout(pexels_key_layout)
+        layout.addWidget(self.pexels_status_label)
+        layout.addSpacing(12)
         layout.addWidget(auto_host_heading)
         layout.addLayout(auto_host_layout)
         layout.addLayout(auto_host_provider_layout)
@@ -990,9 +1023,11 @@ class SettingsMenu(QDialog):
         layout.addLayout(kokoro_tts_voice_layout)
         layout.addWidget(local_hint)
         self.auto_host_provider_combobox.currentTextChanged.connect(self.update_auto_host_provider_fields)
+        self.openai_api_key_input.textChanged.connect(lambda _text: self.update_pexels_fields())
         self.local_tts_preset_combobox.currentTextChanged.connect(lambda _text: self.update_local_tts_fields())
         self.macos_tts_voice_combobox.currentTextChanged.connect(lambda _text: self.update_local_tts_fields())
         self.update_auto_host_provider_fields(self.auto_host_provider_combobox.currentText())
+        self.update_pexels_fields()
 
         # Add space before the Apply button
         layout.addSpacing(10)
@@ -1025,6 +1060,19 @@ class SettingsMenu(QDialog):
         for widget in getattr(self, "local_auto_host_widgets", []):
             widget.setVisible(is_local)
         self.update_local_tts_fields()
+
+    def update_pexels_fields(self):
+        has_llm = bool(
+            os.environ.get("OPENAI_API_KEY")
+            or self.openai_api_key_input.text().strip()
+            or self._pexels_local_llm_available
+        )
+        self.use_pexels_checkbox.setEnabled(has_llm)
+        if has_llm:
+            self.pexels_status_label.setText("Stored locally on this computer. Leave blank to use PEXELS_API_KEY.")
+        else:
+            self.use_pexels_checkbox.setChecked(False)
+            self.pexels_status_label.setText("Add an OpenAI API key or start your local LLM, then reopen Settings to enable Pexels.")
 
     def update_local_tts_fields(self):
         is_local = self.auto_host_provider_combobox.currentText() == "local"
@@ -1109,6 +1157,10 @@ class SettingsMenu(QDialog):
         auto_host['answer_judging'] = 'auto_with_challenge'
         auto_host['leniency'] = self.auto_host_leniency_combobox.currentText()
 
+        image_fallback = config.get('image_fallback', DEFAULT_CONFIG['image_fallback']).copy()
+        image_fallback['use_pexels'] = self.use_pexels_checkbox.isChecked() and self.use_pexels_checkbox.isEnabled()
+        image_fallback['pexels_api_key'] = self.pexels_api_key_input.text().strip()
+
         # Save config
         logging.info("Saving settings...")
         with open(config_path, 'w') as f:
@@ -1120,6 +1172,7 @@ class SettingsMenu(QDialog):
                 'allownegativeinfinal': allownegativeinfinal,
                 'use_wayback_first': use_wayback_first,
                 'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
+                'image_fallback': image_fallback,
                 'auto_host': auto_host,
             }, f)
 
@@ -1133,6 +1186,7 @@ class SettingsMenu(QDialog):
                 'allownegativeinfinal': allownegativeinfinal,
                 'use_wayback_first': use_wayback_first,
                 'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
+                'image_fallback': image_fallback,
                 'auto_host': auto_host,
             })
             self.parent().game.auto_host.refresh_config()

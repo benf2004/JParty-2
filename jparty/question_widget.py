@@ -6,7 +6,6 @@ from PyQt6.QtGui import (
     QPixmap,
     QFontDatabase
 )
-import requests
 import re
 import logging
 import json
@@ -21,6 +20,7 @@ from jparty.style import MyLabel, CARDPAL, board_text_color
 from jparty.constants import DEFAULT_CONFIG, VIDEO_PLAY_TIME
 from jparty.utils import get_base_path
 from jparty.paths import config_path
+from jparty.image_fallback import load_question_image
 import threading
 import time
 from urllib.parse import urlparse, parse_qs
@@ -118,16 +118,11 @@ class QuestionWidget(QWidget):
         return isinstance(link, str) and link.lower().startswith(("http://", "https://"))
 
     def load_image_content(self, question):
-        try:
-            if self.is_remote_link(question.image_link):
-                request = requests.get(question.image_link, timeout=1)
-                question.image_content = request.content
-            else:
-                with open(question.image_link, "rb") as image_file:
-                    question.image_content = image_file.read()
+        question.image_content = load_question_image(question, self.config, timeout=1)
+        if question.image_content is not None and b"Not Found" not in question.image_content:
             logging.info(f"Loaded image: {question.image_link}")
-        except (OSError, requests.exceptions.RequestException):
-            logging.info(f"Failed to load image: {question.image_link}", exc_info=True)
+        else:
+            logging.info(f"Failed to load image: {question.image_link}")
 
     def local_or_remote_media_url(self, link):
         if self.is_remote_link(link):

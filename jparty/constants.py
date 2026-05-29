@@ -21,6 +21,10 @@ DEFAULT_CONFIG = {
   'allownegativeinfinal': 'True',
   'use_wayback_first': True,
   'mute_sound': False,
+  'image_fallback': {
+    'use_pexels': False,
+    'pexels_api_key': '',
+  },
   'auto_host': {
     'enabled': False,
     'ai_provider': 'openai',

@@ -72,6 +72,10 @@ NEXT_CLUE_LINES = [
     "{player}, the board is yours. Choose the next clue.",
     "{player}, keep it rolling. Pick the next clue.",
     "{player}, where are we going next?",
+    "{player}, you're in control.",
+    "{player}, Pick the next clue.",
+    "{player}, the board is yours.",
+    "{player}, keep it rolling.",
 ]
 
 TTS_KEEP_SPELLED_WORDS = {
@@ -556,10 +560,10 @@ class AutoHostAI:
     def _local_normalize_speech_text(self, text):
         prompt = (
             "You prepare Jeopardy clues for text-to-speech. Keep the clue EXACTLY the same "
-            "words, but change the abbreviations so that they are pronounced correctly when passed through text to speech. Expand abbreviations, symbols, "
+            "words, but expand the abbreviations so that they are pronounced correctly when passed through text to speech. Expand abbreviations, symbols, "
             "initialisms with periods, and number shorthand like \"No. 1\" into "
-            "\"number one\". Preserve the clue's meaning and facts. Do not answer "
-            "the clue. Do not add commentary. Do not change anything else.Return only JSON with this exact "
+            "\"number one\". Preserve the clue's meaning and facts. Do not in any circumstance answer "
+            "the clue. Do not add commentary. Do not change anything else. Return only JSON with this exact "
             "shape: {\"spoken_text\": \"...\"}.\n"
             f"Clue: {text}"
         )

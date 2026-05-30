@@ -1,3 +1,4 @@
+import json
 import unittest
 import tempfile
 from unittest.mock import patch
@@ -1045,6 +1046,8 @@ class AutoHostTests(unittest.TestCase):
         self.assertEqual(game.dc.question_widget.show_calls, 1)
         self.assertIn("dd-clue-0-0", played)
         self.assertEqual(game.players[0].waiter.messages[-1][0], "PROMPT_RECORD_ANSWER_AUTO")
+        payload = json.loads(game.players[0].waiter.messages[-1][1])
+        self.assertEqual(payload["recording_timeout_ms"], auto_host_module.AUTO_HOST_DAILY_DOUBLE_TIMEOUT * 1000)
 
     def test_daily_double_wager_rejects_over_max_wager(self):
         game = FakeGame()

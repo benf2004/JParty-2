@@ -225,6 +225,7 @@ function setAnswerRecordPrompt(payload) {
 
 function resetBuzzAnswerPanel() {
     $("#buzz-answer-panel").hide().removeClass("waiting ready");
+    $("#buzz-answer-panel").removeData("recording-timeout-ms");
     $("#buzz-answer-controls").show();
     $("#answer-record-status").removeClass("active").text("");
     $("#answer-record-prompt").text("Record your answer");
@@ -238,6 +239,11 @@ function showBuzzAnswerWait(payload) {
 function showBuzzAnswerReady(payload) {
     setAnswerRecordPrompt(payload);
     $("#buzz-answer-panel").show().removeClass("waiting").addClass("ready");
+    if (payload && payload.recording_timeout_ms !== undefined) {
+        $("#buzz-answer-panel").data("recording-timeout-ms", Number(payload.recording_timeout_ms));
+    } else {
+        $("#buzz-answer-panel").removeData("recording-timeout-ms");
+    }
     $("#buzz-answer-controls").show();
 }
 
@@ -287,7 +293,24 @@ function supportedAudioType() {
     return "";
 }
 
-async function recordAutoHostAudio(purpose) {
+function autoHostRecordingTimeout(purpose, requestedTimeoutMs) {
+    if (requestedTimeoutMs !== undefined && !Number.isNaN(Number(requestedTimeoutMs))) {
+        return Number(requestedTimeoutMs);
+    }
+    if (purpose === "answer") {
+        var panelTimeout = $("#buzz-answer-panel").data("recording-timeout-ms");
+        if (panelTimeout !== undefined && !Number.isNaN(Number(panelTimeout))) {
+            return Number(panelTimeout);
+        }
+        return 4500;
+    }
+    if (purpose === "daily_double_wager") {
+        return 4500;
+    }
+    return 3500;
+}
+
+async function recordAutoHostAudio(purpose, requestedTimeoutMs) {
     if (!navigator.mediaDevices || !window.MediaRecorder) {
         alert("Microphone recording is not available in this browser context. Use the HTTPS buzzer URL, accept/trust the local JParty certificate if prompted, or use the on-screen fallback.");
         return;
@@ -319,7 +342,7 @@ async function recordAutoHostAudio(purpose) {
             if (recorder.state === "recording") {
                 recorder.stop();
             }
-        }, purpose === "answer" ? 4500 : (purpose === "daily_double_wager" ? 4500 : 3500));
+        }, autoHostRecordingTimeout(purpose, requestedTimeoutMs));
     } catch (err) {
         console.log(err);
         status.removeClass("active");
@@ -581,9 +604,10 @@ var updater = {
                     load_page("buzz");
                     break;
                 case "PROMPT_RECORD_ANSWER_AUTO":
-                    showBuzzAnswerReady(JSON.parse(jsondata.text || "{}"));
+                    var answerPayload = JSON.parse(jsondata.text || "{}");
+                    showBuzzAnswerReady(answerPayload);
                     load_page("buzz");
-                    setTimeout(function() { recordAutoHostAudio("answer"); }, 300);
+                    setTimeout(function() { recordAutoHostAudio("answer", answerPayload.recording_timeout_ms); }, 300);
                     break;
                 case "CHALLENGE_OPEN":
                     var challenge = JSON.parse(jsondata.text);

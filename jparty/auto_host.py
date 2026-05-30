@@ -21,6 +21,7 @@ except ImportError:
     sa = None
 
 from jparty.paths import user_data_dir
+from jparty.constants import AUTO_HOST_DAILY_DOUBLE_TIMEOUT
 
 DEFAULT_AUTO_HOST_CONFIG = {
     "enabled": False,
@@ -1572,7 +1573,7 @@ class AutoHostController:
             return False
         return not all(q.complete for q in getattr(board, "questions", []))
 
-    def prompt_answer(self, player, auto_start=False, message="Speak now"):
+    def prompt_answer(self, player, auto_start=False, message="Speak now", recording_timeout_ms=None):
         if not self.enabled or not player or not player.waiter:
             return
         player.page = "buzz"
@@ -1581,6 +1582,8 @@ class AutoHostController:
             "prompt": message,
             "auto_start": auto_start,
         }
+        if recording_timeout_ms is not None:
+            player.auto_payload["recording_timeout_ms"] = recording_timeout_ms
         payload = json.dumps(player.auto_payload)
         player.waiter.send("PROMPT_RECORD_ANSWER_AUTO" if auto_start else "PROMPT_RECORD_ANSWER", payload)
 
@@ -1640,7 +1643,7 @@ class AutoHostController:
 
     def _read_daily_double_clue_then_record(self, player, clue):
         self._play_text_and_wait(self.clue_text(clue), f"dd-clue-{clue.index[0]}-{clue.index[1]}")
-        self.prompt_answer(player, auto_start=True)
+        self.prompt_answer(player, auto_start=True, recording_timeout_ms=AUTO_HOST_DAILY_DOUBLE_TIMEOUT * 1000)
 
     def retry_daily_double_wager(self, player, max_wager):
         message = f"That wager is not valid. You can wager from 0 to {max_wager}. Try again."

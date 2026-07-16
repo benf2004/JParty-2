@@ -1129,7 +1129,12 @@ class SettingsMenu(QDialog):
         use_wayback_first = self.wayback_combobox.currentText() == "True"
 
         auto_host = config.get('auto_host', DEFAULT_CONFIG['auto_host']).copy()
+        old_auto_host_enabled = bool(auto_host.get('enabled'))
         auto_host['enabled'] = self.auto_host_combobox.currentText() == "True"
+        # Toggling Auto Host changes whether the buzzer server serves HTTPS,
+        # so a restart is needed to (re)start or stop the HTTPS listener.
+        if auto_host['enabled'] != old_auto_host_enabled:
+            requires_restart = True
         auto_host['ai_provider'] = self.auto_host_provider_combobox.currentText()
         auto_host['openai_api_key'] = self.openai_api_key_input.text().strip()
         auto_host['tts_voice'] = self.auto_host_voice_combobox.currentData() or 'coral'

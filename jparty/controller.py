@@ -282,7 +282,11 @@ class BuzzerController:
             self.start(threaded, tries+1)
             return
 
-        self.start_https()
+        # Only serve HTTPS when Auto Host is enabled. HTTPS uses a self-signed
+        # cert (no trusted certificate) which causes problems, so plain HTTP is
+        # preferred whenever Auto Host is off.
+        if self.game and self.game.auto_host.enabled:
+            self.start_https()
 
         self.io_loop = tornado.ioloop.IOLoop.current()
         if threaded:
@@ -467,7 +471,7 @@ class BuzzerController:
 
     def player_url(self, prefer_https=False):
         localip = BuzzerController.localip()
-        if prefer_https:
+        if prefer_https and self.https_enabled:
             return f"https://{localip}:{self.https_port}"
         return f"http://{self.host()}"
 

@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
 from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtCore import Qt
 
 from jparty.style import MyLabel, CARDPAL, board_text_color
@@ -127,9 +129,22 @@ class QuestionWidget(QWidget):
     def local_or_remote_media_url(self, link):
         if self.is_remote_link(link):
             return link
-        return QUrl.fromLocalFile(os.path.abspath(link)).toString()
+        # Use FullyEncoded so spaces/special chars in the filename become a
+        # valid URL (e.g. "Adele Dazeem.mp4" -> "Adele%20Dazeem.mp4").
+        # Plain toString() leaves a literal space, which the <video> src
+        # cannot resolve and the local file silently fails to load.
+        return QUrl.fromLocalFile(os.path.abspath(link)).toString(
+            QUrl.ComponentFormattingOption.FullyEncoded
+        )
 
     def load_direct_media(self, parent, question, link, media_type, audio_only=False):
+        # Local files are played through QtMultimedia (native AVFoundation on
+        # macOS), which supports H.264/AAC. QWebEngine's bundled Chromium lacks
+        # the proprietary codecs and fails local .mp4 with
+        # DEMUXER_ERROR_NO_SUPPORTED_STREAMS, so it's only used for remote URLs.
+        if not self.is_remote_link(link):
+            self.load_local_media(parent, question, link, media_type, audio_only=audio_only)
+            return
         try:
             self.web_view = QWebEngineView()
             media_url = self.local_or_remote_media_url(link)
@@ -195,6 +210,34 @@ class QuestionWidget(QWidget):
             self.main_layout.addWidget(self.web_view, alignment=Qt.AlignmentFlag.AlignCenter)
         except Exception:
             logging.info(f"Failed to load direct {media_type}: {link}", exc_info=True)
+
+    def load_local_media(self, parent, question, link, media_type, audio_only=False):
+        try:
+            self.audio_output = QAudioOutput()
+            self.media_player = QMediaPlayer()
+            self.media_player.setAudioOutput(self.audio_output)
+            # Start muted (mirrors the previous autoplay-muted behaviour);
+            # play_video() unmutes when the game is ready for sound.
+            self.audio_output.setMuted(True)
+
+            is_host = bool(parent and hasattr(parent, "host") and parent.host())
+
+            if media_type != "audio" and not audio_only:
+                self.video_widget = QVideoWidget()
+                self.media_player.setVideoOutput(self.video_widget)
+                if is_host:
+                    self.video_widget.setFixedHeight(self.height() * 5)
+                    self.video_widget.setFixedWidth(self.width() * 3)
+                else:
+                    self.video_widget.setFixedHeight(self.height() * 12)
+                    self.video_widget.setFixedWidth(self.width() * 7)
+                self.main_layout.addSpacing(self.main_layout.contentsMargins().top())
+                self.main_layout.addWidget(self.video_widget, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            self.media_player.setSource(QUrl.fromLocalFile(os.path.abspath(link)))
+            self.media_player.play()
+        except Exception:
+            logging.info(f"Failed to load local {media_type}: {link}", exc_info=True)
 
     def load_audio(self, parent, question):
         question.includes_audio = True
@@ -283,11 +326,23 @@ class QuestionWidget(QWidget):
             logging.info(f"error: {exc_type}, {fname}:{exc_tb.tb_lineno}")
     
     def play_video(self):
+        if hasattr(self, 'media_player'):
+            self.audio_output.setMuted(False)
+            if self.media_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self.media_player.play()
         if hasattr(self, 'web_view'):
             self.web_view.page().runJavaScript("startVideo();")
             print("Starting video via JavaScript")
 
     def hide_video(self):
+        if hasattr(self, 'media_player'):
+            self.media_player.stop()
+            if hasattr(self, 'video_widget'):
+                self.main_layout.removeWidget(self.video_widget)
+                self.video_widget.deleteLater()
+                del self.video_widget
+            self.media_player.deleteLater()
+            del self.media_player
         if hasattr(self, 'web_view'):
             self.main_layout.removeWidget(self.web_view)
             self.web_view.deleteLater()

@@ -1,5 +1,6 @@
 """Portable desktop bundle. AI services/models are optional first-run downloads."""
 import platform
+import os
 import sys
 from pathlib import Path
 
@@ -8,6 +9,8 @@ sys.path.insert(0, str(project))
 from jparty.version import version
 
 system = platform.system()
+signing_identity = os.environ.get('JPARTY_CODESIGN_IDENTITY') if system == 'Darwin' else None
+entitlements = str(project / 'resources' / 'macos-entitlements.plist') if signing_identity else None
 iconfile = str(project / 'resources' / ('icon.icns' if system == 'Darwin' else 'icon.ico'))
 data_files = []
 for asset in (project / 'jparty' / 'data').rglob('*'):
@@ -37,6 +40,7 @@ exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True, name='JParty', debug=False,
     bootloader_ignore_signals=False, strip=False, upx=False,
     console=False, icon=iconfile,
+    codesign_identity=signing_identity, entitlements_file=entitlements,
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='JParty')
 if system == 'Darwin':

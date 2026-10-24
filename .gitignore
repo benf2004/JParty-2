@@ -12,3 +12,5 @@ benchmarks/answer_judging/runs/
 /.venv*/
 __pycache__/
 *.py[cod]
+*.p12
+*.p8

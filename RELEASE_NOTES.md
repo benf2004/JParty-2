@@ -1,4 +1,4 @@
-# JParty 2.4.0
+# JParty 2.4.1
 
 One desktop app, with optional local AI Auto Host. No AI models are included in these downloads.
 
@@ -9,10 +9,11 @@ One desktop app, with optional local AI Auto Host. No AI models are included in 
 - **Windows x64**: Windows 10/11. Extract the whole ZIP and launch `JParty/JParty.exe`; keep `_internal` alongside it.
 - **Linux x64**: Ubuntu 22.04 or newer, or a compatible desktop distribution. Extract the whole tar.gz and run `JParty/JParty`; keep `_internal` alongside it. Audio and Qt require your distribution's normal ALSA and graphics libraries.
 
-The macOS apps are ad-hoc signed, not Apple Developer ID signed or notarized. Windows executables are not Authenticode signed.
+The macOS apps are signed with an Apple Developer ID, notarized by Apple, and include a stapled notarization ticket. Windows executables are not Authenticode signed.
 
 ## What changed
 
+- Mac releases now use Developer ID signing, hardened runtime, Apple notarization, and Gatekeeper verification.
 - Team mode supports 2–8 teams and up to 32 individual phone buzzers, shared scores, team lockouts, and one Final Jeopardy entry per team.
 - Team setup has its own redesigned Settings tab, with a team editor and roster recovery controls.
 - Phone dependencies ship with the app rather than requiring public CDNs.

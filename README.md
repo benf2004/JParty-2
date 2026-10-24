@@ -92,6 +92,23 @@ GitHub Actions builds Apple Silicon and Intel macOS, Windows x64, and Linux x64.
 
 Automatic local AI setup/start/stop is currently macOS-only. Windows and Linux can use cloud hosting or connect to separately managed compatible local AI services.
 
+### Mac release signing
+
+Mac builds in GitHub Actions require these repository Actions secrets:
+
+| Secret | Value |
+| --- | --- |
+| `BUILD_CERTIFICATE_BASE64` | Base64-encoded `.p12` containing one valid **Developer ID Application** certificate and its private key |
+| `P12_PASSWORD` | Password used when exporting the `.p12` |
+| `KEYCHAIN_PASSWORD` | Separate random password for the temporary build keychain |
+| `APPLE_ID` | Apple account email used for notarization |
+| `APPLE_TEAM_ID` | Apple Developer membership Team ID |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated at account.apple.com; do not use your normal Apple password |
+
+The workflow imports the identity into a temporary keychain, validates Apple credentials, signs the bundled binaries with hardened runtime, submits the app using `notarytool`, staples the accepted ticket, and verifies Gatekeeper acceptance before creating the final ZIP and checksum. It removes the temporary keychain even if the build fails. Mac releases fail if any credential or verification is missing; local builds without signing settings remain ad-hoc signed for development.
+
+Keep the original signing identity in macOS Keychain, with a password-protected `.p12` backup in an encrypted vault. Certificate passwords and private keys must never be committed. GitHub secrets hold the CI copy; Base64 itself is not encryption. See [GitHub's certificate setup](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications) and [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+
 ## FAQ
 
 ### How does it work? (technical details)

@@ -47,7 +47,7 @@ jobs:
 
   build:
     needs: test
-    timeout-minutes: 35
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -67,6 +67,16 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+      - name: Install Developer ID and validate notarization credentials
+        if: runner.os == 'macOS'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: python scripts/macos_signing.py install
       - name: Linux build and Qt libraries
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-shape0 libxcb-keysyms1 libxcb-icccm4 libnss3 libpulse0 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 libgstreamer-gl1.0-0
@@ -83,7 +93,18 @@ jobs:
               stream.write(str(directory.resolve()) + '\n')
           PYTHON
       - name: Build, verify installed executable, and archive
+        env:
+          JPARTY_REQUIRE_NOTARIZATION: ${{ runner.os == 'macOS' && '1' || '0' }}
+          PYINSTALLER_STRICT_BUNDLE_CODESIGN_ERROR: '1'
         run: python scripts/build_release.py
+      - name: Apple notarization diagnostics
+        if: failure() && runner.os == 'macOS'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: notarization-${{ matrix.platform }}
+          path: dist/releases/*.notarization.json
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: JParty-${{ matrix.platform }}
@@ -91,6 +112,9 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 14
+      - name: Remove temporary signing keychain
+        if: always() && runner.os == 'macOS'
+        run: python scripts/macos_signing.py cleanup
 
   release:
     if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/codex/release-')
@@ -121,6 +145,15 @@ jobs:
           sha256sum --check *.sha256
           cat *.sha256 > SHA256SUMS.txt
           cd ..
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          from jparty.version import version
+          for arch in ('arm64', 'x64'):
+              report = json.loads(Path(f'release-assets/JParty-{version}-macos-{arch}.notarization.json').read_text())
+              if report.get('status') != 'Accepted' or report.get('stapled') is not True or report.get('gatekeeper') != 'accepted':
+                  raise SystemExit(f'Mac {arch} has not passed notarization and Gatekeeper checks')
+          PYTHON
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             STATE=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish --jq '[.isDraft, .targetCommitish] | @tsv')
             if [[ "$STATE" != $'true\t'"$GITHUB_SHA" ]]; then

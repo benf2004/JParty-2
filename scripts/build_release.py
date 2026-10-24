@@ -47,6 +47,9 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     system, arch = platform_name()
+    require_notarization = os.environ.get('JPARTY_REQUIRE_NOTARIZATION') == '1'
+    if system == 'macos' and require_notarization and not os.environ.get('JPARTY_CODESIGN_IDENTITY'):
+        raise RuntimeError('Mac releases require a Developer ID signing identity. Run the signing setup first.')
     build = PROJECT / 'build' / 'release' / f'{system}-{arch}'
     dist = PROJECT / 'dist' / 'release' / f'{system}-{arch}'
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
@@ -59,6 +62,9 @@ def main():
     smoke_test(executable, report)
     stem = output / f'JParty-{version}-{system}-{arch}'
     if system == 'macos':
+        if require_notarization:
+            from macos_signing import notarize
+            notarize(app, Path(str(stem) + '.notarization.json'))
         # ditto preserves symlinks and the app's executable modes/code signature.
         archive = Path(str(stem) + '.zip')
         subprocess.run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent',

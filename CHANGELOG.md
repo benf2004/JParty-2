@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.4.1] - 2026-10-24
+
+- Developer ID signing and hardened runtime for both Mac architectures.
+- Automated Apple notarization, ticket stapling, and Gatekeeper verification before publication.
+- Temporary CI keychains keep signing keys and notarization credentials out of release assets.
+
 ## [2.4.0] - 2026-10-24
 
 - Team mode for up to 32 players across 2–8 teams, with shared scores and team Final Jeopardy.

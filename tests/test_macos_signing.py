@@ -31,6 +31,14 @@ class MacSigningTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             signing.developer_identity('\n'.join(f'1) {c * 40} "Developer ID Application: Test"' for c in 'AB'))
 
+    def test_identity_diagnostics_show_type_without_personal_details(self):
+        output = '1) ' + 'A' * 40 + ' "3rd Party Mac Developer Application: Private Name (PRIVATE123)" (CSSMERR_TP_CERT_EXPIRED)'
+        result = signing.identity_diagnostics(output)
+        self.assertIn('3rd Party Mac Developer Application', result)
+        self.assertIn('CSSMERR_TP_CERT_EXPIRED', result)
+        self.assertNotIn('Private Name', result)
+        self.assertNotIn('PRIVATE123', result)
+
     def test_command_errors_never_include_password_arguments(self):
         password = 'sensitive-example-password'
         with patch.object(signing.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', password)):

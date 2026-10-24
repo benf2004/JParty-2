@@ -40,6 +40,17 @@ def developer_identity(output):
     return identities[0]
 
 
+def identity_diagnostics(output):
+    # Report certificate categories and trust errors, never names or key data.
+    categories = ('Developer ID Application', 'Developer ID Installer', 'Apple Development',
+                  'Apple Distribution', 'Mac Developer', '3rd Party Mac Developer Application',
+                  '3rd Party Mac Developer Installer')
+    present = [name for name in categories if f'"{name}:' in output]
+    errors = sorted(set(re.findall(r'CSSMERR_[A-Z_]+', output)))
+    return ('Imported signing identity types: ' + (', '.join(present) or 'none') +
+            ('. Certificate validation errors: ' + ', '.join(errors) if errors else ''))
+
+
 def install():
     missing = [name for name in SECRETS if not os.environ.get(name, '').strip()]
     if missing:
@@ -72,8 +83,15 @@ def install():
              '-k', password, keychain], 'Allow codesign access to the private key')
     command(['security', 'list-keychains', '-d', 'user', '-s', keychain, *keychains],
             'Add temporary signing keychain to search list')
-    identity = developer_identity(command(['security', 'find-identity', '-v', '-p', 'codesigning', keychain],
-                                          'Find Developer ID Application identity'))
+    identities = command(['security', 'find-identity', '-v', '-p', 'codesigning', keychain],
+                         'Find Developer ID Application identity')
+    try:
+        identity = developer_identity(identities)
+    except RuntimeError:
+        diagnostic = command(['security', 'find-identity', '-p', 'codesigning', keychain],
+                             'Inspect signing identity types')
+        print(identity_diagnostics(diagnostic), flush=True)
+        raise
     command(['xcrun', 'notarytool', 'store-credentials', PROFILE, '--keychain', keychain,
              '--apple-id', os.environ['APPLE_ID'], '--team-id', os.environ['APPLE_TEAM_ID'],
              '--password', os.environ['APPLE_APP_SPECIFIC_PASSWORD']], 'Validate Apple notarization credentials')

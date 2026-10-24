@@ -16,6 +16,7 @@ APP_SUPPORT="${HOME}/Library/Application Support/JParty/local-auto-host"
 WHISPER_MODEL_FILE="${APP_SUPPORT}/models/ggml-${WHISPER_MODEL}.bin"
 OLLAMA_HEALTH_URL="${LLM_URL%/v1}/api/tags"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/local_kev_service.sh"
 
 usage() {
   cat <<EOF
@@ -24,6 +25,7 @@ Start already-installed full local Auto Host services for game night.
 Usage:
   scripts/start_full_local_auto_host_macos.sh
   JPARTY_LOCAL_LLM_MODEL=llama3.2:3b scripts/start_full_local_auto_host_macos.sh
+  JPARTY_LOCAL_KEV_ENABLED=0 scripts/start_full_local_auto_host_macos.sh
   JPARTY_WHISPER_MODEL=small.en scripts/start_full_local_auto_host_macos.sh
   JPARTY_LOCAL_TTS_ENGINE=kokoro scripts/start_full_local_auto_host_macos.sh
   JPARTY_MACOS_TTS_VOICE="Your Personal Voice Name" scripts/start_full_local_auto_host_macos.sh
@@ -236,10 +238,13 @@ else
 fi
 
 echo
+start_kev
+
 echo "Full local Auto Host services are running."
 echo
 echo "JParty Settings:"
 echo "  Auto Host AI provider: local"
+print_kev_settings
 echo "  Local LLM URL: $LLM_URL"
 echo "  Local LLM model: $LLM_MODEL"
 echo "  Local STT URL: $STT_URL"

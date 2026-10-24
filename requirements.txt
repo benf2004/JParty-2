@@ -4,7 +4,7 @@ urllib3<2.0.0
 simpleaudio==1.0.4
 tornado==6.3.2
 BeautifulSoup4==4.11.1
-pyinstaller==6.2.0
+pyinstaller==6.16.0
 qrcode==7.3.1
 pygame==2.5.2
 PyQt6-Qt6==6.6.0

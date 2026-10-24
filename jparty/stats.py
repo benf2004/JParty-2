@@ -54,7 +54,7 @@ class StatsBox(QDialog):
         super().__init__(parent)
 
         # Read the current theme from the configuration file
-        with open('config.json', 'r') as f:
+        with open(config_path, 'r') as f:
             config = json.load(f)
         current_earlybuzztimeout = config.get('earlybuzztimeout', DEFAULT_CONFIG['earlybuzztimeout'])
 
@@ -89,13 +89,12 @@ class StatsBox(QDialog):
             "Most buzz-ins": [None, 0],
         }
 
+        table.verticalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         for i, player in enumerate(game.players):
             name_label = NameLabel(player.name, self)
             table.setCellWidget(0, i+1, name_label)
             table.setCellWidget(1, i+1, QLabel(""))
             table.cellWidget(1, i+1).setWordWrap(True)
-            # Allow above cell to take up more height if words wrap
-            table.verticalHeader().setSectionResizeMode(i+1, QHeaderView.ResizeMode.ResizeToContents)
 
             # Show first, early, and late buzz stats
             first_buzzes = 0
@@ -140,7 +139,11 @@ class StatsBox(QDialog):
                 table.cellWidget(1, awards[award][0]).setText("🏆" + text + award)
 
         # Set the table width to match the window width
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        if len(game.players) > 8:
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            table.horizontalHeader().setDefaultSectionSize(170)
+        else:
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         # Set first row height to 100 pixels
         table.setRowHeight(0, 100)

@@ -1,93 +1,115 @@
-name: Create Binaries
+name: Build and release JParty
 
 on:
-   workflow_dispatch:
+  push:
+    tags: ['v*']
+    branches: ['codex/release-*']
+  workflow_dispatch:
 
 permissions:
-  actions: read
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  linux-build:
-    runs-on: ubuntu-latest
+  test:
+    runs-on: macos-14
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install ALSA
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - name: Create Executable
-        uses: sayyid5416/pyinstaller@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python_ver: '3.11'
-          spec: 'JParty.spec'
-          requirements: 'requirements.txt'
-          upload_exe_with_name: 'JParty_linux'
+          python-version: '3.11'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r requirements.txt
+      - name: Python tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -s tests -q
+      - name: Phone client tests
+        run: node --test tests/*.cjs
 
-  windows-build:
-    runs-on: windows-latest
+  build:
+    needs: test
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x64
+          - os: windows-2022
+            platform: windows-x64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Create Executable
-        uses: sayyid5416/pyinstaller@v1
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python_ver: '3.11'
-          spec: 'JParty.spec'
-          requirements: 'requirements.txt'
-          upload_exe_with_name: 'JParty_windows'
-
-  macos-arm-build:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Create Executable
-        uses: sayyid5416/pyinstaller@v1
+          python-version: '3.11'
+          cache: pip
+      - name: Linux build and Qt libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0 libnss3
+      - run: python -m pip install -r requirements.txt
+      - name: Build, verify installed executable, and archive
+        run: python scripts/build_release.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          python_ver: '3.11'
-          spec: 'JParty.spec'
-          requirements: 'requirements.txt'
-          upload_exe_with_name: 'JParty_macos_arm'
+          name: JParty-${{ matrix.platform }}
+          path: dist/releases/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
 
   release:
-    runs-on: ubuntu-latest
-    needs:
-      - linux-build
-      - windows-build
-      - macos-arm-build
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/codex/release-')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(python3 - <<'PY'
-          from jparty.version import version
-          print(version)
-          PY
-          )
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Download binaries
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: release-assets
-
-      - name: Package release assets
+          merge-multiple: true
+      - name: Verify archives and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
         run: |
-          mkdir packaged-assets
-          for artifact in release-assets/*; do
-            artifact_name=$(basename "$artifact")
-            (cd release-assets && zip -r "../packaged-assets/${artifact_name}.zip" "$artifact_name")
-          done
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: JParty v${{ steps.version.outputs.version }}
-          generate_release_notes: true
-          make_latest: true
-          fail_on_unmatched_files: true
-          files: packaged-assets/*
+          set -euo pipefail
+          RELEASE_VERSION=$(python3 -c 'from jparty.version import version; print(version)')
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$RELEASE_TAG" != "v$RELEASE_VERSION" ]]; then
+            echo "Release tag must match jparty/version.py" >&2
+            exit 1
+          fi
+          RELEASE_TAG="v$RELEASE_VERSION"
+          cd release-assets
+          sha256sum --check *.sha256
+          cat *.sha256 > SHA256SUMS.txt
+          cd ..
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            STATE=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish --jq '[.isDraft, .targetCommitish] | @tsv')
+            if [[ "$STATE" != $'true\t'"$GITHUB_SHA" ]]; then
+              echo "Refusing to replace an existing published release or another commit's draft." >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --draft \
+              --title "JParty ${RELEASE_TAG} — Teams and optional local Auto Host" \
+              --notes-file RELEASE_NOTES.md
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

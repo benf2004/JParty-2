@@ -1,7 +1,8 @@
 import json
 import unittest
 import tempfile
-from unittest.mock import patch
+import threading
+from unittest.mock import Mock, patch
 
 from jparty import auto_host as auto_host_module
 from jparty.auto_host import AutoHostController, AutoHostAI, Judgement
@@ -199,7 +200,7 @@ class AutoHostTests(unittest.TestCase):
 
     def test_clue_selection_uses_local_parse_before_openai(self):
         game = FakeGame()
-        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+        ai = AutoHostAI({"ai_provider": "openai", "judge_provider": "default", "openai_api_key": "saved-key"})
 
         with patch.object(ai, "_openai_parse_clue") as openai_parse:
             clue = ai.parse_clue_selection("Computers for four hundred", game.current_round)
@@ -209,7 +210,7 @@ class AutoHostTests(unittest.TestCase):
 
     def test_clue_selection_uses_openai_fallback_after_local_miss(self):
         game = FakeGame()
-        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+        ai = AutoHostAI({"ai_provider": "openai", "judge_provider": "default", "openai_api_key": "saved-key"})
 
         with patch("jparty.auto_host.requests", object()), patch.object(
             ai, "_heuristic_parse_clue", return_value=None
@@ -327,6 +328,77 @@ class AutoHostTests(unittest.TestCase):
 
         self.assertEqual(game.players[1].score, 200)
         self.assertIs(controller.player_in_control, game.players[1])
+
+    def test_dispute_vote_transfers_live_clue_picker_to_winner(self):
+        game = FakeGame()
+        controller = AutoHostController(game)
+        controller.player_in_control = game.players[0]
+        game.active_question = None
+        game.answering_player = None
+        game.players[0].page = "select"
+        controller.last_resolved_clue = {
+            "answer": "Ada Lovelace", "value": 200,
+            "awarded_player": game.players[0], "was_correct": True,
+        }
+        with patch.object(controller, "_play_text_and_wait"), patch.object(controller, "_start_dispute_timer"):
+            controller.request_dispute(game.players[1])
+            for player in game.players:
+                controller.receive_dispute_vote(player, "player:1")
+
+        self.assertIs(controller.player_in_control, game.players[1])
+        self.assertIs(game.highlighted_player, game.players[1])
+        self.assertEqual([p.page for p in game.players], ["buzz", "select", "buzz"])
+        messages = [m for m, _ in game.players[1].waiter.messages]
+        self.assertLess(messages.index("DISPUTE_RESULT"), messages.index("PROMPT_SELECT_CLUE"))
+
+    def test_resolving_dispute_stops_playing_explanation(self):
+        controller = AutoHostController(FakeGame())
+        controller.dispute_open = True
+        cancel = controller._dispute_speech_cancel = threading.Event()
+        playing = threading.Event()
+        stopped = threading.Event()
+        playback = Mock()
+        playback.wait_done.side_effect = lambda: (playing.set(), stopped.wait(2))
+        playback.stop.side_effect = stopped.set
+        audio = Mock()
+        audio.WaveObject.from_wave_file.return_value.play.return_value = playback
+        with patch.object(controller.ai, "speech_file", return_value="test.wav"), patch.object(auto_host_module, "sa", audio):
+            worker = threading.Thread(target=controller._play_text_and_wait, args=("Vote", "dispute-open", cancel))
+            worker.start()
+            try:
+                self.assertTrue(playing.wait(2))
+                controller.resolve_dispute()
+                playback.stop.assert_called_once()
+                self.assertTrue(cancel.is_set())
+            finally:
+                stopped.set()
+                worker.join(2)
+        self.assertFalse(worker.is_alive())
+
+    def test_resolved_dispute_does_not_play_late_generated_explanation(self):
+        controller = AutoHostController(FakeGame())
+        controller.dispute_open = True
+        cancel = controller._dispute_speech_cancel = threading.Event()
+        generating = threading.Event()
+        generated = threading.Event()
+
+        def speech_file(*args):
+            generating.set()
+            generated.wait(2)
+            return "test.wav"
+
+        audio = Mock()
+        with patch.object(controller.ai, "speech_file", side_effect=speech_file), patch.object(auto_host_module, "sa", audio):
+            worker = threading.Thread(target=controller._play_text_and_wait, args=("Vote", "dispute-open", cancel))
+            worker.start()
+            try:
+                self.assertTrue(generating.wait(2))
+                controller.resolve_dispute()
+            finally:
+                generated.set()
+                worker.join(2)
+            audio.WaveObject.from_wave_file.return_value.play.assert_not_called()
+        self.assertFalse(worker.is_alive())
 
     def test_daily_double_dispute_to_nobody_applies_incorrect_wager_penalty(self):
         game = FakeGame()
@@ -501,7 +573,7 @@ class AutoHostTests(unittest.TestCase):
         self.assertEqual(game.players[0].waiter.messages[-1][0], "PROMPT_RECORD_ANSWER_AUTO")
 
     def test_openai_api_key_prefers_environment(self):
-        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+        ai = AutoHostAI({"ai_provider": "openai", "judge_provider": "default", "openai_api_key": "saved-key"})
 
         with patch.dict("os.environ", {"OPENAI_API_KEY": "env-key"}):
             self.assertEqual(ai.api_key(), "env-key")
@@ -574,7 +646,7 @@ class AutoHostTests(unittest.TestCase):
             "choices": [
                 {
                     "message": {
-                        "content": '{"is_correct": false, "confidence": 0.7, "reason": "Different person"}'
+                        "content": "false"
                     }
                 }
             ]
@@ -584,10 +656,10 @@ class AutoHostTests(unittest.TestCase):
             judgement = ai.judge_answer(game.active_question, "Ada Byron")
 
         self.assertFalse(judgement.is_correct)
-        self.assertEqual(judgement.confidence, 0.7)
-        self.assertEqual(judgement.reason, "Different person")
+        self.assertIsNone(judgement.confidence)
+        self.assertEqual(judgement.reason, "Local judge rejected the answer.")
 
-    def test_local_invalid_judgement_json_falls_back_to_heuristic(self):
+    def test_local_invalid_binary_judgement_fails_closed(self):
         game = FakeGame()
         ai = AutoHostAI({"ai_provider": "local"})
         payload = {"choices": [{"message": {"content": "not json"}}]}
@@ -595,7 +667,7 @@ class AutoHostTests(unittest.TestCase):
         with patch("jparty.auto_host.requests.post", return_value=FakeResponse(payload)):
             judgement = ai.judge_answer(game.active_question, "Ada Byron")
 
-        self.assertEqual(judgement.reason, "Did not closely match expected answer.")
+        self.assertEqual(judgement.reason, "Answer judge unavailable; could not verify the answer.")
 
     def test_local_tts_posts_to_configured_endpoint_and_reuses_cache(self):
         ai = AutoHostAI({
@@ -745,7 +817,7 @@ class AutoHostTests(unittest.TestCase):
 
     def test_fast_judgement_skips_openai_for_exact_match(self):
         game = FakeGame()
-        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+        ai = AutoHostAI({"ai_provider": "openai", "judge_provider": "default", "openai_api_key": "saved-key"})
 
         with patch.object(ai, "_openai_judge_answer") as openai_judge:
             judgement = ai.judge_answer(game.active_question, "Who is Ada Lovelace?")
@@ -756,7 +828,7 @@ class AutoHostTests(unittest.TestCase):
 
     def test_plausible_non_matching_judgement_uses_openai(self):
         game = FakeGame()
-        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+        ai = AutoHostAI({"ai_provider": "openai", "judge_provider": "default", "openai_api_key": "saved-key"})
 
         with patch("jparty.auto_host.requests", object()), patch.object(
             ai,
@@ -769,20 +841,16 @@ class AutoHostTests(unittest.TestCase):
         self.assertEqual(judgement.reason, "OpenAI rejected it")
         openai_judge.assert_called_once()
 
-    def test_obvious_wrong_judgement_skips_openai(self):
+    def test_low_word_overlap_reaches_selected_judge(self):
         game = FakeGame()
-        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
-
-        with patch.object(ai, "_openai_judge_answer") as openai_judge:
-            judgement = ai.judge_answer(game.active_question, "zzzzzzzz")
-
-        self.assertFalse(judgement.is_correct)
-        self.assertEqual(judgement.confidence, 0.97)
-        openai_judge.assert_not_called()
+        ai = AutoHostAI({"ai_provider": "openai", "judge_provider": "default", "openai_api_key": "saved-key"})
+        with patch.object(ai, "_openai_judge_answer", return_value=Judgement(False, 0.7, "Rejected", "zzzzzzzz")) as judge:
+            self.assertFalse(ai.judge_answer(game.active_question, "zzzzzzzz").is_correct)
+            judge.assert_called_once()
 
     def test_fast_judgement_skips_openai_for_near_match(self):
         game = FakeGame()
-        ai = AutoHostAI({"ai_provider": "openai", "openai_api_key": "saved-key"})
+        ai = AutoHostAI({"ai_provider": "openai", "judge_provider": "default", "openai_api_key": "saved-key"})
 
         with patch.object(ai, "_openai_judge_answer") as openai_judge:
             judgement = ai.judge_answer(game.active_question, "What is Ada Lovelace")
@@ -939,6 +1007,7 @@ class AutoHostTests(unittest.TestCase):
         game.active_question = None
         player = FakePlayer("A")
         player.page = "answer"
+        game.players = [player]
 
         def record_answer(answering_player, guess):
             answering_player.finalanswer = guess
@@ -956,6 +1025,9 @@ class AutoHostTests(unittest.TestCase):
     @unittest.skipIf(Game is None or KeystrokeManager is None, "PyQt6 game runtime is unavailable")
     def test_end_game_disarms_stale_final_space_handlers_before_play_again(self):
         game = Game.__new__(Game)
+        from PyQt6.QtCore import QObject
+        QObject.__init__(game)
+        game.init_teams()
         players = [FakePlayer("A"), FakePlayer("B")]
         players[0].score = 1000
         players[1].score = 500

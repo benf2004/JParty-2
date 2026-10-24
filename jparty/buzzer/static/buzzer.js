@@ -114,8 +114,23 @@ function challengeVote(vote) {
 
 function startGameVote() {
     send("START_GAME_VOTE");
-    $("#buzz-status").text("Start vote recorded");
     $("#start-game-button").prop("disabled", true);
+}
+
+function cancelStartGame() {
+    send("CANCEL_START_GAME");
+}
+
+var startCountdownActive = false;
+function setStartCountdown(payload) {
+    startCountdownActive = Number(payload.seconds_remaining) > 0 || !!payload.checking_services;
+    $("#start-countdown-status").text(payload.checking_services
+        ? "Checking Auto Host services… Anyone can cancel."
+        : (startCountdownActive
+            ? "Starting in " + payload.seconds_remaining + "… Anyone can cancel."
+            : (payload.message || "")));
+    $("#cancel-start-game-button").toggle(startCountdownActive);
+    $("#start-game-button").toggle(!!payload.can_start_game && !startCountdownActive).prop("disabled", false);
 }
 
 function playAgainVote() {
@@ -137,7 +152,7 @@ function disputeVote(choice) {
 
 function setAutoHostControls(payload) {
     payload = payload || {};
-    $("#start-game-button").toggle(!!payload.can_start_game).prop("disabled", false);
+    $("#start-game-button").toggle(!!payload.can_start_game && !startCountdownActive).prop("disabled", false);
     $("#play-again-button").toggle(!!payload.can_play_again).prop("disabled", false);
     $(".dispute-button").toggle(!!payload.can_dispute).prop("disabled", false);
 }
@@ -311,6 +326,12 @@ function autoHostRecordingTimeout(purpose, requestedTimeoutMs) {
 }
 
 async function recordAutoHostAudio(purpose, requestedTimeoutMs) {
+    var nativeRecorder = window.webkit && window.webkit.messageHandlers
+        && window.webkit.messageHandlers.jpartyAudio;
+    if (nativeRecorder) {
+        await recordNativeAutoHostAudio(nativeRecorder, purpose, requestedTimeoutMs);
+        return;
+    }
     if (!navigator.mediaDevices || !window.MediaRecorder) {
         alert("Microphone recording is not available in this browser context. Use the HTTPS buzzer URL, accept/trust the local JParty certificate if prompted, or use the on-screen fallback.");
         return;
@@ -351,6 +372,32 @@ async function recordAutoHostAudio(purpose, requestedTimeoutMs) {
     }
 }
 
+// The iOS client records through AVAudioRecorder, even when this page uses LAN HTTP.
+// Keep the upload here so it uses the same player token and server as the buzzer.
+var nativeAudioBusy = false;
+async function recordNativeAutoHostAudio(nativeRecorder, purpose, requestedTimeoutMs) {
+    if (nativeAudioBusy) return;
+    nativeAudioBusy = true;
+    var status = autoHostStatus(purpose);
+    status.addClass("active").text("Speak now");
+    try {
+        var recording = await nativeRecorder.postMessage({
+            purpose: purpose,
+            durationMs: autoHostRecordingTimeout(purpose, requestedTimeoutMs)
+        });
+        var bytes = Uint8Array.from(atob(recording.audioBase64), function(character) {
+            return character.charCodeAt(0);
+        });
+        status.removeClass("active");
+        await uploadAutoHostAudio(purpose, new Blob([bytes], {type: "audio/mp4"}));
+    } catch (err) {
+        console.log(err);
+        status.removeClass("active").text(err.message || "Recording stopped. Try again or use the on-screen controls.");
+    } finally {
+        nativeAudioBusy = false;
+    }
+}
+
 async function uploadAutoHostAudio(purpose, blob) {
     var status = autoHostStatus(purpose);
     status.text("Sending...");
@@ -358,7 +405,9 @@ async function uploadAutoHostAudio(purpose, blob) {
     form.append("token", getToken());
     form.append("purpose", purpose);
     form.append("sequence_id", String(new Date().getTime()));
-    form.append("audio", blob, "auto-host-audio.webm");
+    var extension = blob.type.indexOf("mp4") !== -1 ? "m4a"
+        : (blob.type.indexOf("ogg") !== -1 ? "ogg" : "webm");
+    form.append("audio", blob, "auto-host-audio." + extension);
     try {
         var response = await fetch("/api/player-audio", { method: "POST", body: form });
         if (!response.ok) {
@@ -380,9 +429,47 @@ async function uploadAutoHostAudio(purpose, blob) {
     }
 }
 
+var teamState = {team_mode: false, teams: [], team_id: null};
+function setTeamState(state) {
+    if (typeof state.team_mode !== "boolean") return;
+    teamState = state;
+    window.team_mode = state.team_mode;
+    $("#team-banner").toggle(state.team_mode);
+    $("#join-team-section").toggle(state.team_mode);
+    $("#display-name-section").toggle(window.auto_host_enabled || state.team_mode);
+    if (state.team_mode) $(".name-hint").text("Type your name, choose a team, and sign below");
+    for (const selector of ["#join-team", "#lobby-team"]) {
+        const select = $(selector);
+        const previous = select.val();
+        select.empty();
+        select.append($("<option>").val("").text("Choose a team"));
+        for (const team of (state.teams || [])) {
+            select.append($("<option>").val(team.id).text(team.name + " (" + team.members + ")"));
+        }
+        select.val(state.team_id || previous || "");
+    }
+    $("#lobby-team-section").toggle(state.team_mode && !!state.in_lobby && !!state.joined);
+    let summary = state.team_name || "Team mode";
+    if (state.joined) {
+        summary += " · " + Number(state.score || 0).toLocaleString('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 0});
+        if (state.representative) summary += " · Acting: " + state.representative;
+        if (state.is_representative) summary += " (you)";
+    }
+    $("#team-summary").text(summary);
+    $("#team-error").text("");
+}
+function changeTeam(teamId) {
+    if (teamState.in_lobby && teamId) send("CHANGE_TEAM", teamId);
+}
+
 function nameForm(name, buzzerColor, displayName="") {
     console.log(name);
-    send("NAME", name, buzzerColor, {displayName: displayName});
+    const teamId = window.team_mode ? $("#join-team").val() : null;
+    if (window.team_mode && !teamId) {
+        $("#team-error").text("Choose a team before joining.");
+        return;
+    }
+    send("NAME", name, buzzerColor, {displayName: displayName, team_id: teamId});
 }
 
 function set_max_wager(score) {
@@ -429,16 +516,14 @@ $(document).ready(function() {
     // resizeCanvas();
 
     var cookie = getToken();
-    if (cookie != "") {
-        console.log("checking token "+cookie)
-        updater.socket.onopen = function (event) {
-            updater.socket.send(JSON.stringify({message:"CHECK_IF_EXISTS", text:cookie}));
-        };
-    } else {
-        console.log("no cookie")
+    // Every phone needs lobby configuration, including its first visit.
+    updater.socket.onopen = function (event) {
+        updater.socket.send(JSON.stringify({message:"CHECK_IF_EXISTS", text:cookie}));
+    };
+    if (cookie == "") {
         load_page("name");
         resizeCanvas();
-    };
+    }
 
 
     $("#clear-button").on("click", function () {
@@ -467,7 +552,7 @@ $(document).ready(function() {
             console.log("Selected buzzer color: " + buzzerColor)
             $("#buzzer").css("background-color", buzzerColor)
             let displayName = "";
-            if (window.auto_host_enabled) {
+            if (window.auto_host_enabled || window.team_mode) {
                 displayName = $("input[name='displayname']").val().trim();
                 if (displayName == "") {
                     alert("Please type your name too");
@@ -499,6 +584,7 @@ var updater = {
         updater.socket.onmessage = function(event) {
             jsondata = JSON.parse(event.data);
             switch (jsondata.message) {
+                case "FULL":
                 case "GAMEFULL":
                     alert("Game has too many players!")
                     window.location.reload()
@@ -518,6 +604,7 @@ var updater = {
                         console.log(err);
                     }
                     setAutoHostState(state);
+                    setTeamState(state);
                     load_page("name");
                     resizeCanvas();
                     break;
@@ -525,9 +612,16 @@ var updater = {
                     console.log("Already exists" + jsondata.text);
                     state = JSON.parse(jsondata.text);
                     setAutoHostState(state);
+                    setTeamState(state);
                     set_max_wager(state.score);
                     setAutoHostPayload(state.auto_payload);
                     load_page(state.page);
+                    break;
+                case "TEAM_STATE":
+                    setTeamState(JSON.parse(jsondata.text));
+                    break;
+                case "TEAM_ERROR":
+                    $("#team-error").text(jsondata.text);
                     break;
                 case "PROMPTWAGER":
                     set_max_wager(jsondata.text);
@@ -569,6 +663,9 @@ var updater = {
                     setAutoHostControls({can_start_game: true});
                     load_page("buzz");
                     break;
+                case "START_GAME_COUNTDOWN":
+                    setStartCountdown(JSON.parse(jsondata.text || "{}"));
+                    break;
                 case "PROMPT_PLAY_AGAIN":
                     setAutoHostControls({can_play_again: true});
                     load_page("buzz");
@@ -582,7 +679,11 @@ var updater = {
                         disputeCountdownTimer = null;
                     }
                     $("#dispute-status").text(jsondata.text);
-                    setTimeout(function() { load_page("buzz"); }, 1800);
+                    setTimeout(function() {
+                        if (current_page === "dispute") {
+                            load_page("buzz");
+                        }
+                    }, 1800);
                     break;
                 case "DISPUTE_VOTE_RECORDED":
                     $("#dispute-status").text(jsondata.text);

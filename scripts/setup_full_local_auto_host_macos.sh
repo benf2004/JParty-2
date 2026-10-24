@@ -16,17 +16,20 @@ APP_SUPPORT="${HOME}/Library/Application Support/JParty/local-auto-host"
 WHISPER_MODEL_FILE="${APP_SUPPORT}/models/ggml-${WHISPER_MODEL}.bin"
 OLLAMA_HEALTH_URL="${LLM_URL%/v1}/api/tags"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/local_kev_service.sh"
 
 usage() {
   cat <<EOF
 Set up a fully local beginner Auto Host stack on macOS:
-  - Ollama local LLM for clue parsing and answer judging
+  - Ollama local LLM for text generation and fast true/false answer judging
+  - Optional Kev-0.8B decision server (enable with JPARTY_LOCAL_KEV_ENABLED=1)
   - whisper.cpp local Whisper server for speech-to-text
   - built-in macOS speech or Kokoro for text-to-speech
 
 Usage:
   scripts/setup_full_local_auto_host_macos.sh
   JPARTY_LOCAL_LLM_MODEL=llama3.2:3b scripts/setup_full_local_auto_host_macos.sh
+  JPARTY_LOCAL_KEV_ENABLED=1 scripts/setup_full_local_auto_host_macos.sh
   JPARTY_WHISPER_MODEL=small.en scripts/setup_full_local_auto_host_macos.sh
   JPARTY_LOCAL_TTS_ENGINE=kokoro scripts/setup_full_local_auto_host_macos.sh
   JPARTY_MACOS_TTS_VOICE="Your Personal Voice Name" scripts/setup_full_local_auto_host_macos.sh
@@ -42,6 +45,10 @@ install_homebrew_if_needed() {
     return
   fi
   echo "Homebrew is required to install Ollama, whisper.cpp, and ffmpeg."
+  if [[ "${JPARTY_NONINTERACTIVE:-0}" == "1" ]]; then
+    echo "Install Homebrew from https://brew.sh in Terminal first, then click Set up again."
+    return 1
+  fi
   read -r -p "Install Homebrew now? [y/N] " install_brew
   if [[ ! "$install_brew" =~ ^[Yy]$ ]]; then
     echo "Stopped. Install Homebrew from https://brew.sh, then run this script again."
@@ -239,6 +246,7 @@ install_homebrew_if_needed
 install_brew_package_if_needed ollama ollama
 install_brew_package_if_needed ffmpeg ffmpeg
 install_brew_package_if_needed whisper-server whisper-cpp
+setup_kev
 
 mkdir -p "${APP_SUPPORT}/models"
 
@@ -286,6 +294,8 @@ if [[ "$TTS_ENGINE" == "macos" ]]; then
   echo
 fi
 
+start_kev setup
+
 echo "Fully local Auto Host setup is running."
 echo
 if [[ "$TTS_ENGINE" == "macos" ]]; then
@@ -297,6 +307,7 @@ if [[ "$TTS_ENGINE" == "macos" ]]; then
 fi
 echo "Use these JParty Settings:"
 echo "  Auto Host AI provider: local"
+print_kev_settings
 echo "  Local LLM URL: $LLM_URL"
 echo "  Local LLM model: $LLM_MODEL"
 echo "  Local STT URL: $STT_URL"

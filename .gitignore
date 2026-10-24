@@ -6,3 +6,9 @@ dist**
 .idea/**
 .DS_Store
 voice_sample.m4a
+benchmarks/answer_judging/cache/
+benchmarks/answer_judging/runs/
+
+/.venv*/
+__pycache__/
+*.py[cod]

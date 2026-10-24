@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/local_kev_service.sh"
+
 usage() {
   cat <<EOF
 Stop full local Auto Host services.
@@ -34,6 +37,9 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+kev_stop_status=0
+stop_kev || kev_stop_status=$?
+
 stop_process "whisper-server" "whisper.cpp"
 stop_process "ollama serve" "Ollama"
 stop_process "local_macos_tts_server.py" "macOS TTS"
@@ -44,4 +50,9 @@ if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -
 fi
 
 echo
-echo "Full local Auto Host services are stopped."
+if [[ "$kev_stop_status" -eq 0 ]]; then
+  echo "Full local Auto Host services are stopped."
+else
+  echo "Other local Auto Host services are stopped; Kev is still shutting down."
+fi
+exit "$kev_stop_status"

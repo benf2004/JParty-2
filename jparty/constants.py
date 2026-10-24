@@ -3,6 +3,7 @@ QUESTIONTIME = 4
 AUTO_HOST_DAILY_DOUBLE_TIMEOUT = 10
 MONIES = [[200, 400, 600, 800, 1000], [400, 800, 1200, 1600, 2000]]
 MAXPLAYERS = 8
+MAXTEAMPLAYERS = 32
 PORT = 8080
 HTTPS_PORT = 8443
 VIDEO_PORT = 8081
@@ -29,6 +30,9 @@ DEFAULT_CONFIG = {
   'auto_host': {
     'enabled': False,
     'ai_provider': 'openai',
+    'judge_provider': 'local_binary',
+    'kev_base_url': 'http://localhost:8009/v1',
+    'kev_model': 'kev-latest',
     'openai_api_key': '',
     'tts_voice': 'coral',
     'local_llm_base_url': 'http://localhost:11434/v1',

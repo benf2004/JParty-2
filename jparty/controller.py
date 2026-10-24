@@ -13,8 +13,8 @@ from threading import Thread
 import socket
 
 from jparty.environ import root
-from jparty.game import FinalBoard, Player
-from jparty.constants import MAXPLAYERS, PORT, HTTPS_PORT
+from jparty.game import FinalBoard
+from jparty.constants import PORT, HTTPS_PORT
 import json
 from jparty.utils import resource_path
 from jparty.paths import user_data_dir
@@ -133,6 +133,7 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
         return {}
 
     def open(self):
+        self.controller.sockets.add(self)
         self.set_nodelay(True)
 
     def send(self, msg, text=""):
@@ -150,7 +151,9 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
         try:
             self.write_message(data)
             logging.info(f"Sent {data}")
-        except:
+        except tornado.websocket.WebSocketClosedError:
+            pass  # A queued state update can race with a normal disconnect.
+        except Exception:
             logging.error(f"Error sending message {msg}", exc_info=True)
 
     def check_if_exists(self, token, buzzerColor):
@@ -158,12 +161,13 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
 
         p = self.controller.player_with_token(token, buzzerColor)
         if p is None:
-            if token == "":
+            if token == "" and buzzerColor is not None:
                 logging.info("Buzzer pressed but no associated player")
                 self.send("UNUSED_BUZZER")
                 return
             logging.info("NEW")
-            self.send("NEW", tornado.escape.json_encode({"auto_host_enabled": self.controller.game.auto_host.enabled}))
+            self.send("NEW", tornado.escape.json_encode({"auto_host_enabled": self.controller.game.auto_host.enabled,
+                                                        **self.controller.game.team_state()}))
         else:
             logging.info(f"Reconnected {p}")
             self.player = p
@@ -171,7 +175,11 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
             p.waiter = self
             state = p.state()
             state["auto_host_enabled"] = self.controller.game.auto_host.enabled
+            state.update(self.controller.game.team_state(p))
+            self.controller.game.team_action_trigger.emit(("refresh",))
             self.send("EXISTS", tornado.escape.json_encode(state))
+            if self.controller.accepting_players:
+                self.send("START_GAME_COUNTDOWN", tornado.escape.json_encode(self.controller.game.start_countdown_state()))
 
     def on_message(self, message):
         # do this first to kill latency
@@ -190,13 +198,15 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
         if msg == "NAME":
             buzzerColor = parsed["buzzerColor"]
             logging.info(f"received NAME: {text}")
-            self.init_player(text, buzzerColor, parsed.get("displayName", ""))
+            self.init_player(text, buzzerColor, parsed.get("displayName", ""), parsed.get("team_id"))
         elif msg == "CHECK_IF_EXISTS":
             logging.info(f"Checking if {text} exists")
             buzzerColor = None
             if "buzzerColor" in parsed:
                 buzzerColor = parsed["buzzerColor"]
             self.check_if_exists(text, buzzerColor)
+        elif msg == "CHANGE_TEAM":
+            self.controller.game.team_action_trigger.emit(("change", self.player, text))
         elif msg == "WAGER":
             self.wager(text)
         elif msg == "ANSWER":
@@ -211,6 +221,8 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
             self.application.controller.finalize_auto_judgement()
         elif msg == "START_GAME_VOTE":
             self.application.controller.start_game_vote(self.player)
+        elif msg == "CANCEL_START_GAME":
+            self.application.controller.cancel_start_game(self.player)
         elif msg == "PLAY_AGAIN_VOTE":
             self.application.controller.play_again_vote(self.player)
         elif msg == "DISPUTE_REQUEST":
@@ -221,38 +233,28 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
         else:
             raise Exception("Unknown message")
 
-    def init_player(self, name, buzzerColor, displayName=""):
-
-        if not self.controller.accepting_players:
-            logging.info("Game started!")
-            self.send("GAMESTARTED")
-            return
-
-        if len(self.controller.connected_players) >= MAXPLAYERS:
-            self.send("FULL")
-            return
-
-        self.player = Player(name, buzzerColor, self, displayName)
-        self.application.controller.new_player(self.player)
-        logging.info(
-            f"New Player: {self.player} {self.request.remote_ip} {self.player.token.hex()}"
-        )
-        self.send("TOKEN", self.player.token.hex())
-        if self.application.controller.game.auto_host.enabled:
-            self.send("PROMPT_START_GAME")
+    def init_player(self, name, buzzerColor, displayName="", team_id=None):
+        # Registration and team changes share the game thread with start validation.
+        self.controller.game.team_action_trigger.emit(("join", self, name, buzzerColor, displayName, team_id))
+        return
 
     def buzz(self):
         self.application.controller.buzz(self.player)
 
     def wager(self, text):
-        self.application.controller.wager(self.player, int(text))
-        self.player.page = "null"
+        try:
+            self.application.controller.wager(self.player, int(text))
+        except (TypeError, ValueError):
+            self.send("TEAM_ERROR", "Enter a valid wager.")
 
     def toolate(self):
         self.send("TOOLATE")
 
     def on_close(self):
-        pass
+        self.controller.sockets.discard(self)
+        if self.player is not None and self.player.waiter is self:
+            self.player.connected = False
+            self.controller.game.team_action_trigger.emit(("refresh",))
 
 
 class BuzzerController:
@@ -268,6 +270,7 @@ class BuzzerController:
         self.https_port = options.https_port
         self.https_enabled = False
         self.connected_players = []
+        self.sockets = set()
         self.accepting_players = True
         self.start_votes = set()
         self.play_again_votes = set()
@@ -296,11 +299,20 @@ class BuzzerController:
         else:
             self.io_loop.start()
 
+    def close_player(self, player):
+        loop = getattr(self, "io_loop", None)
+        if loop is None:
+            player.waiter.close()
+        else:
+            loop.add_callback(player.waiter.close)
+
     def restart(self):
         for p in self.connected_players:
-            p.waiter.close()
+            self.close_player(p)
         self.connected_players = []
         self.accepting_players = True
+        self.start_votes = set()
+        self.play_again_votes = set()
 
     def start_https(self):
         try:
@@ -365,7 +377,12 @@ class BuzzerController:
 
         return cert_path, key_path
 
-    def buzz(self, player):
+    def buzz(self, player, queued=False):
+        if getattr(self.game, "team_mode", False) and not queued:
+            self.game.team_action_trigger.emit(("buzz", player))
+            return
+        if player not in self.connected_players:
+            return
         if self.game:
             i_player = self.game.players.index(player)
             self.game.buzz_trigger.emit(i_player)
@@ -373,7 +390,14 @@ class BuzzerController:
             i_player = self.connected_players.index(player)
             self.game.buzz_hint_trigger.emit(i_player)
 
-    def wager(self, player, amount):
+    def wager(self, player, amount, queued=False):
+        if getattr(self.game, "team_mode", False) and not queued:
+            self.game.team_action_trigger.emit(("wager", player, amount))
+            return
+        if player not in self.game.players:
+            return
+        if getattr(self.game, "team_mode", False) and (not player.team or player.team.representative is not player):
+            return
         i_player = self.game.players.index(player)
         if (
             self.game.auto_host.enabled
@@ -385,10 +409,17 @@ class BuzzerController:
         else:
             self.game.wager_trigger.emit(i_player, amount)
 
-    def answer(self, player, guess):
+    def answer(self, player, guess, queued=False):
         if not self.game:
             return
+        if getattr(self.game, "team_mode", False) and not queued:
+            self.game.team_action_trigger.emit(("answer", player, guess))
+            return
+        if player not in self.game.players:
+            return
         if isinstance(self.game.current_round, FinalBoard):
+            if (getattr(self.game, "team_mode", False) and player not in self.game.final_players()):
+                return
             if getattr(player, "page", None) != "answer":
                 logging.info("Ignoring stale Final Jeopardy answer from %s", player)
                 return
@@ -397,7 +428,7 @@ class BuzzerController:
         elif self.game.auto_host.enabled and self.game.answering_player is player and self.game.active_question is not None:
             self.game.auto_host.receive_text_answer(player, guess)
             player.page = "null"
-        else:
+        elif not getattr(self.game, "team_mode", False):
             self.game.answer(player, guess)
             player.page = "null"
 
@@ -405,25 +436,33 @@ class BuzzerController:
         self.connected_players.append(player)
         self.game.new_player_trigger.emit()
 
-    def select_clue(self, player, text):
+    def select_clue(self, player, text, queued=False):
+        if getattr(self.game, "team_mode", False) and not queued:
+            self.game.team_action_trigger.emit(("select_clue", player, text))
+            return
         if not self.game or not self.game.auto_host.enabled:
             return
         try:
             category_index, row = [int(part) for part in str(text).split(",", 1)]
         except (TypeError, ValueError):
             return
-        if player is self.game.auto_host.player_in_control:
+        if (player is self.game.auto_host.player_in_control
+                and (not getattr(self.game, "team_mode", False)
+                     or (player.team and player.team.representative is player))):
             self.game.auto_select_clue_trigger.emit(category_index, row)
 
     def majority_count(self):
         return (len(self.connected_players) // 2) + 1
 
     def start_game_vote(self, player):
-        if not self.game or not self.game.auto_host.enabled or player is None:
+        if (not self.game or not self.game.auto_host.enabled
+                or not self.accepting_players or player not in self.connected_players):
             return
-        self.start_votes.add(player)
-        if self.game.startable() and len(self.start_votes) >= self.majority_count():
-            self.game.auto_start_game_trigger.emit()
+        self.game.auto_start_game_trigger.emit()
+
+    def cancel_start_game(self, player):
+        if self.game and self.accepting_players and player in self.connected_players:
+            self.game.cancel_start_game_trigger.emit()
 
     def play_again_vote(self, player):
         if not self.game or not self.game.auto_host.enabled or player is None:
@@ -488,14 +527,14 @@ class BuzzerController:
 
     def open_wagers(self, players=None):
         if players is None:
-            players = self.connected_players
+            players = self.game.final_players() if getattr(self.game, "team_mode", False) else self.connected_players
 
         for p in players:
             p.waiter.send("PROMPTWAGER", str(max(p.score, 0)))
             p.page = "wager"
 
     def prompt_answers(self):
-        for p in self.connected_players:
+        for p in (self.game.final_players() if getattr(self.game, "team_mode", False) else self.connected_players):
             p.waiter.send("PROMPTANSWER")
             p.page = "answer"
 

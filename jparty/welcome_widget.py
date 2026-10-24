@@ -5,7 +5,9 @@ from PyQt6.QtGui import (
     QFont,
     QPalette,
     QPixmap,
-    QColor, 
+    QColor,
+    QIntValidator,
+    QPolygonF,
 )
 from PyQt6.QtWidgets import (
     QWidget,
@@ -20,8 +22,13 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QPushButton,
     QFileDialog,
+    QScrollArea,
+    QTabWidget,
+    QGroupBox,
+    QApplication,
+    QStyleFactory,
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QPointF, pyqtSignal
 
 import qrcode
 import time
@@ -39,8 +46,9 @@ from jparty.utils import resource_path, add_shadow, DynamicLabel, DynamicButton
 from jparty.helpmsg import helpmsg
 from jparty.style import WINDOWPAL
 from jparty.constants import DEFAULT_CONFIG, DESIGNER_URL
-from jparty.image_fallback import local_llm_available
 from jparty.paths import config_path, history_path
+from jparty.local_services import LocalServiceManager
+from jparty.service_widgets import LocalServicesPanel
 
 AUTO_HOST_VOICE_OPTIONS = [
     ("alloy", "Neutral, balanced"),
@@ -263,6 +271,7 @@ class Welcome(StartWidget):
         self.start_button = DynamicButton("Start!", self)
         self.start_button.clicked.connect(self.on_start)
         self.start_button.setEnabled(False)
+        self.game.start_countdown_changed.connect(self.update_start_countdown)
 
         self.rand_button = DynamicButton("Random", self)
         self.rand_button.clicked.connect(self.random)
@@ -323,11 +332,19 @@ class Welcome(StartWidget):
         main_layout.addLayout(select_layout, 5)
         main_layout.addStretch(1)
         main_layout.addWidget(self.summary_label, 5)
+        self.auto_host_status_label = QLabel()
+        self.auto_host_status_label.setWordWrap(True)
+        self.auto_host_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.auto_host_status_label.setContentsMargins(24, 12, 24, 18)
+        self.auto_host_status_label.setStyleSheet('color: #64748b; font-size: 13px;')
+        main_layout.addWidget(self.auto_host_status_label)
         main_layout.addLayout(footer_layout, 3)
         main_layout.addStretch(3)
 
         self.gameid_trigger.connect(self.set_gameid)
         self.summary_trigger.connect(self.set_summary)
+        self.game.local_services.changed.connect(self.update_auto_host_status)
+        self.update_auto_host_status()
 
         self.setLayout(main_layout)
 
@@ -364,6 +381,12 @@ class Welcome(StartWidget):
         logging.info("Showing settings")
         settings_menu = SettingsMenu(self)
         settings_menu.exec()
+
+    def update_auto_host_status(self):
+        enabled = self.game.auto_host.enabled
+        self.auto_host_status_label.setVisible(enabled)
+        self.auto_host_status_label.setText('Auto Host · ' + self.game.local_services.message)
+        self.check_start()
 
     def open_designer(self):
         logging.info("Opening game designer in external browser")
@@ -453,10 +476,24 @@ class Welcome(StartWidget):
             self.start_button.setEnabled(True)
         else:
             self.start_button.setEnabled(False)
+        if self.game.auto_host.enabled and not self.game.auto_host_ready():
+            self.start_button.setToolTip('Auto Host is not ready. Open Settings → Local Services to start or set up its services.')
+        else:
+            self.start_button.setToolTip('')
+
+    def update_start_countdown(self, state):
+        seconds = state["seconds_remaining"]
+        if state.get('checking_services'):
+            self.start_button.setText("Checking Auto Host… Cancel")
+        else:
+            self.start_button.setText(f"Starting in {seconds}… Cancel" if seconds else "Start!")
+        self.check_start()
 
     def on_start(self):
-        self.game.start_game()
-        self.save_history()
+        if self.game.start_countdown_deadline is not None or getattr(self.game, '_start_check_pending', False):
+            self.game.cancel_start_game()
+        else:
+            self.game.request_start_game()
 
     def load_history(self):
         if not os.path.exists(history_path):
@@ -548,6 +585,18 @@ class QRWidget(StartWidget):
     def restart(self):
         pass
 
+class SettingsComboBox(QComboBox):
+    """Keep the dropdown affordance visible with the settings stylesheet."""
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor('#637089'))
+        x, y = self.width() - 17, self.height() / 2
+        painter.drawPolygon(QPolygonF([QPointF(x - 4, y - 2), QPointF(x + 4, y - 2), QPointF(x, y + 3)]))
+
+
 class SettingsMenu(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -568,8 +617,17 @@ class SettingsMenu(QDialog):
         current_auto_host.update(config.get('auto_host', {}) or {})
 
         self.setWindowTitle("Settings")
-        self.setFixedSize(600, 760)
-        layout = QVBoxLayout()
+        self.setObjectName("SettingsMenu")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.settings_style = QStyleFactory.create("Fusion")
+        self.setStyle(self.settings_style)
+        self.resize(880, 780)
+        self.setMinimumSize(720, 570)
+        self._saved_auto_host = current_auto_host.copy()
+        game = getattr(parent, 'game', None)
+        self.service_manager = getattr(game, 'local_services', None)
+        if self.service_manager is None:
+            self.service_manager = LocalServiceManager(current_auto_host, self)
 
         def section_heading(text):
             label = QLabel(text, self)
@@ -587,7 +645,7 @@ class SettingsMenu(QDialog):
         theme_label = QLabel("Theme:", self)
 
         # Add a combo box for theme selection
-        self.theme_combobox = QComboBox(self)
+        self.theme_combobox = SettingsComboBox(self)
         self.theme_combobox.addItem("Default")
         self.theme_combobox.addItem("Christmas")
         self.theme_combobox.addItem("Halloween")
@@ -595,17 +653,6 @@ class SettingsMenu(QDialog):
         self.theme_combobox.addItem("Birthday")
         self.theme_combobox.addItem("BibleBonkers")
         self.theme_combobox.setCurrentText(current_theme)
-
-        # Set the font to bold and text color to white
-        font = self.theme_combobox.font()
-        font.setBold(True)
-        self.theme_combobox.setFont(font)
-        palette = self.theme_combobox.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        self.theme_combobox.setPalette(palette)
-
-        # Add a white border around the dropdown menu
-        self.theme_combobox.setStyleSheet("QComboBox { border: 2px solid white; }")
 
         # Create a horizontal layout for the label and combo box
         theme_layout = QHBoxLayout()
@@ -616,22 +663,11 @@ class SettingsMenu(QDialog):
         showtextwithimages_label = QLabel("Question display mode:", self)
 
         # Add a combo box for showtextwithimages selection
-        self.showtextwithimages_combobox = QComboBox(self)
+        self.showtextwithimages_combobox = SettingsComboBox(self)
         self.showtextwithimages_combobox.addItem("Only show text")
         self.showtextwithimages_combobox.addItem("Only show image")
         self.showtextwithimages_combobox.addItem("Show both")
         self.showtextwithimages_combobox.setCurrentText(current_showtextwithimages)
-
-        # Set the font to bold and text color to white
-        font = self.showtextwithimages_combobox.font()
-        font.setBold(True)
-        self.showtextwithimages_combobox.setFont(font)
-        palette = self.showtextwithimages_combobox.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        self.showtextwithimages_combobox.setPalette(palette)
-
-        # Add a white border around the dropdown menu
-        self.showtextwithimages_combobox.setStyleSheet("QComboBox { border: 2px solid white; }")
 
         # Create a horizontal layout for the label and combo box
         showtextwithimages_layout = QHBoxLayout()
@@ -644,17 +680,7 @@ class SettingsMenu(QDialog):
         # Add a combo box for earlybuzztimeout selection
         self.earlybuzztimeout_combobox = QLineEdit(self)
         self.earlybuzztimeout_combobox.setText(str(current_earlybuzztimeout))
-
-        # Set the font to bold and text color to white
-        font = self.earlybuzztimeout_combobox.font()
-        font.setBold(True)
-        self.earlybuzztimeout_combobox.setFont(font)
-        palette = self.earlybuzztimeout_combobox.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        self.earlybuzztimeout_combobox.setPalette(palette)
-
-        # Add a white border around the dropdown menu
-        self.earlybuzztimeout_combobox.setStyleSheet("QComboBox { border: 2px solid white; }")
+        self.earlybuzztimeout_combobox.setValidator(QIntValidator(0, 10000, self))
 
         # Create a horizontal layout for the label and combo box
         earlybuzztimeout_layout = QHBoxLayout()
@@ -665,21 +691,10 @@ class SettingsMenu(QDialog):
         wayback_label = QLabel("Use Wayback Machine first:", self)
 
         # Add a combo box for use_wayback_first selection
-        self.wayback_combobox = QComboBox(self)
-        self.wayback_combobox.addItem("True")
-        self.wayback_combobox.addItem("False")
-        self.wayback_combobox.setCurrentText("True" if current_use_wayback_first else "False")
-
-        # Set the font to bold and text color to white
-        font = self.wayback_combobox.font()
-        font.setBold(True)
-        self.wayback_combobox.setFont(font)
-        palette = self.wayback_combobox.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        self.wayback_combobox.setPalette(palette)
-
-        # Add a white border around the dropdown menu
-        self.wayback_combobox.setStyleSheet("QComboBox { border: 2px solid white; }")
+        self.wayback_combobox = SettingsComboBox(self)
+        self.wayback_combobox.addItem("Try archived images first", True)
+        self.wayback_combobox.addItem("Try live images first", False)
+        self.wayback_combobox.setCurrentIndex(0 if current_use_wayback_first else 1)
 
         # Create a horizontal layout for the label and combo box
         wayback_layout = QHBoxLayout()
@@ -708,24 +723,13 @@ class SettingsMenu(QDialog):
         self.pexels_status_label.setPalette(pexels_status_palette)
 
         # Add a label for the "allownegative" section
-        allownegative_label = QLabel("Allow Negatives:", self)
+        allownegative_label = QLabel("Negative scores:", self)
 
         # Add a combo box for allownegative selection
-        self.allownegative_combobox = QComboBox(self)
-        self.allownegative_combobox.addItem("True")
-        self.allownegative_combobox.addItem("False")
-        self.allownegative_combobox.setCurrentText(current_allownegative)
-
-        # Set the font to bold and text color to white
-        font = self.allownegative_combobox.font()
-        font.setBold(True)
-        self.allownegative_combobox.setFont(font)
-        palette = self.allownegative_combobox.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        self.allownegative_combobox.setPalette(palette)
-
-        # Add a white border around the dropdown menu
-        self.allownegative_combobox.setStyleSheet("QComboBox { border: 2px solid white; }")
+        self.allownegative_combobox = SettingsComboBox(self)
+        self.allownegative_combobox.addItem("Allowed", "True")
+        self.allownegative_combobox.addItem("Not allowed", "False")
+        self.allownegative_combobox.setCurrentIndex(max(0, self.allownegative_combobox.findData(current_allownegative)))
 
         # Create a horizontal layout for the label and combo box
         allownegative_layout = QHBoxLayout()
@@ -733,24 +737,13 @@ class SettingsMenu(QDialog):
         allownegative_layout.addWidget(self.allownegative_combobox)
 
         # Add a label for the "allownegativeinfinal" section
-        allownegativeinfinal_label = QLabel("Allow Negative Score In Final Jeopardy:", self)
+        allownegativeinfinal_label = QLabel("Negative scores in Final Jeopardy:", self)
 
         # Add a combo box for allownegativeinfinal selection
-        self.allownegativeinfinal_combobox = QComboBox(self)
-        self.allownegativeinfinal_combobox.addItem("True")
-        self.allownegativeinfinal_combobox.addItem("False")
-        self.allownegativeinfinal_combobox.setCurrentText(current_allownegativeinfinal)
-
-        # Set the font to bold and text color to white
-        font = self.allownegativeinfinal_combobox.font()
-        font.setBold(True)
-        self.allownegativeinfinal_combobox.setFont(font)
-        palette = self.allownegativeinfinal_combobox.palette()
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-        self.allownegativeinfinal_combobox.setPalette(palette)
-
-        # Add a white border around the dropdown menu
-        self.allownegativeinfinal_combobox.setStyleSheet("QComboBox { border: 2px solid white; }")
+        self.allownegativeinfinal_combobox = SettingsComboBox(self)
+        self.allownegativeinfinal_combobox.addItem("Allowed", "True")
+        self.allownegativeinfinal_combobox.addItem("Not allowed", "False")
+        self.allownegativeinfinal_combobox.setCurrentIndex(max(0, self.allownegativeinfinal_combobox.findData(current_allownegativeinfinal)))
 
         # Create a horizontal layout for the label and combo box
         allownegativeinfinal_layout = QHBoxLayout()
@@ -758,19 +751,19 @@ class SettingsMenu(QDialog):
         allownegativeinfinal_layout.addWidget(self.allownegativeinfinal_combobox)
 
         auto_host_label = QLabel("Use Auto Host:", self)
-        self.auto_host_combobox = QComboBox(self)
-        self.auto_host_combobox.addItem("False")
-        self.auto_host_combobox.addItem("True")
-        self.auto_host_combobox.setCurrentText("True" if current_auto_host.get('enabled') else "False")
+        self.auto_host_combobox = SettingsComboBox(self)
+        self.auto_host_combobox.addItem("Manual host", False)
+        self.auto_host_combobox.addItem("Auto Host enabled", True)
+        self.auto_host_combobox.setCurrentIndex(1 if current_auto_host.get('enabled') else 0)
 
         ai_provider_label = QLabel("Auto Host AI provider:", self)
-        self.auto_host_provider_combobox = QComboBox(self)
-        self.auto_host_provider_combobox.addItem("openai")
-        self.auto_host_provider_combobox.addItem("local")
-        self.auto_host_provider_combobox.setCurrentText(current_auto_host.get('ai_provider', 'openai'))
+        self.auto_host_provider_combobox = SettingsComboBox(self)
+        self.auto_host_provider_combobox.addItem("OpenAI · cloud", "openai")
+        self.auto_host_provider_combobox.addItem("Local · on this Mac", "local")
+        self.auto_host_provider_combobox.setCurrentIndex(max(0, self.auto_host_provider_combobox.findData(current_auto_host.get('ai_provider', 'openai'))))
 
         leniency_label = QLabel("Auto Host leniency:", self)
-        self.auto_host_leniency_combobox = QComboBox(self)
+        self.auto_host_leniency_combobox = SettingsComboBox(self)
         self.auto_host_leniency_combobox.addItem("strict")
         self.auto_host_leniency_combobox.addItem("normal")
         self.auto_host_leniency_combobox.addItem("generous")
@@ -784,12 +777,38 @@ class SettingsMenu(QDialog):
         auto_host_provider_layout.addWidget(ai_provider_label)
         auto_host_provider_layout.addWidget(self.auto_host_provider_combobox)
 
+        judge_provider_layout = QHBoxLayout()
+        judge_provider_layout.addWidget(QLabel("Answer judge:", self))
+        self.judge_provider_combobox = SettingsComboBox(self)
+        self.judge_provider_combobox.addItem("Local LLM · fast true/false (recommended)", "local_binary")
+        self.judge_provider_combobox.addItem("Use Auto Host AI provider", "default")
+        self.judge_provider_combobox.addItem("Kev (local decision model)", "kev")
+        judge_index = self.judge_provider_combobox.findData(current_auto_host.get('judge_provider', 'local_binary'))
+        self.judge_provider_combobox.setCurrentIndex(max(0, judge_index))
+        judge_provider_layout.addWidget(self.judge_provider_combobox)
+
+        kev_url_label = QLabel("Kev URL:", self)
+        self.kev_url_input = QLineEdit(self)
+        self.kev_url_input.setText(current_auto_host.get('kev_base_url', DEFAULT_CONFIG['auto_host']['kev_base_url']))
+        kev_url_layout = QHBoxLayout()
+        kev_url_layout.addWidget(kev_url_label)
+        kev_url_layout.addWidget(self.kev_url_input)
+        kev_model_label = QLabel("Kev served model:", self)
+        self.kev_model_input = QLineEdit(self)
+        self.kev_model_input.setText(current_auto_host.get('kev_model', DEFAULT_CONFIG['auto_host']['kev_model']))
+        kev_model_layout = QHBoxLayout()
+        kev_model_layout.addWidget(kev_model_label)
+        kev_model_layout.addWidget(self.kev_model_input)
+        kev_hint = QLabel("Kev-0.8B judges unresolved answers. Fast checks run first. Use Local Services to set up and start Kev.", self)
+        kev_hint.setWordWrap(True)
+        self.kev_judge_widgets = [kev_url_label, self.kev_url_input, kev_model_label, self.kev_model_input, kev_hint]
+
         auto_host_leniency_layout = QHBoxLayout()
         auto_host_leniency_layout.addWidget(leniency_label)
         auto_host_leniency_layout.addWidget(self.auto_host_leniency_combobox)
 
         voice_label = QLabel("Auto Host voice:", self)
-        self.auto_host_voice_combobox = QComboBox(self)
+        self.auto_host_voice_combobox = SettingsComboBox(self)
         for voice, description in AUTO_HOST_VOICE_OPTIONS:
             self.auto_host_voice_combobox.addItem(f"{voice} - {description}", voice)
         current_voice_index = self.auto_host_voice_combobox.findData(current_auto_host.get('tts_voice', 'coral'))
@@ -824,7 +843,9 @@ class SettingsMenu(QDialog):
             openai_key_hint,
         ]
 
-        self._pexels_local_llm_available = local_llm_available(current_auto_host)
+        self._pexels_local_llm_available = any(
+            row['name'] == 'Text generation' and row['ready'] for row in self.service_manager.results
+        )
 
         self.local_auto_host_widgets = []
 
@@ -869,7 +890,7 @@ class SettingsMenu(QDialog):
         local_tts_url_layout.addWidget(self.local_tts_url_input)
 
         local_tts_preset_label = QLabel("Local TTS:", self)
-        self.local_tts_preset_combobox = QComboBox(self)
+        self.local_tts_preset_combobox = SettingsComboBox(self)
         for preset, description in LOCAL_TTS_PRESET_OPTIONS:
             self.local_tts_preset_combobox.addItem(description, preset)
         current_tts_preset = current_auto_host.get('local_tts_preset')
@@ -903,7 +924,7 @@ class SettingsMenu(QDialog):
         current_local_voice = current_auto_host.get('local_tts_voice', DEFAULT_CONFIG['auto_host']['local_tts_voice'])
 
         macos_tts_voice_label = QLabel("macOS Say voice:", self)
-        self.macos_tts_voice_combobox = QComboBox(self)
+        self.macos_tts_voice_combobox = SettingsComboBox(self)
         self.macos_tts_voice_combobox.setMinimumWidth(360)
         for voice, description in MACOS_SAY_VOICE_OPTIONS:
             if voice == "__custom__":
@@ -931,7 +952,7 @@ class SettingsMenu(QDialog):
         macos_tts_custom_voice_layout.addWidget(self.macos_tts_custom_voice_input)
 
         kokoro_tts_voice_label = QLabel("Kokoro voice:", self)
-        self.kokoro_tts_voice_combobox = QComboBox(self)
+        self.kokoro_tts_voice_combobox = SettingsComboBox(self)
         self.kokoro_tts_voice_combobox.setMinimumWidth(360)
         for voice, description in KOKORO_VOICE_OPTIONS:
             self.kokoro_tts_voice_combobox.addItem(f"{description} ({voice})", voice)
@@ -942,11 +963,13 @@ class SettingsMenu(QDialog):
         kokoro_tts_voice_layout.addWidget(kokoro_tts_voice_label)
         kokoro_tts_voice_layout.addWidget(self.kokoro_tts_voice_combobox)
 
-        local_hint = QLabel("For Personal Voice, create it in macOS Accessibility, allow applications to use it, then use the exact voice name shown by say -v ?. scripts/setup_full_local_auto_host_macos.sh starts the local Mac voice bridge.", self)
+        local_hint = QLabel("For Personal Voice, create it in macOS Accessibility, allow applications to use it, then use the exact voice name shown by say -v ?. Use Set up in Local Services to install the voice bridge.", self)
         local_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         local_hint.setWordWrap(True)
         local_hint.setPalette(hint_palette)
 
+        self.local_llm_widgets = [local_llm_url_label, self.local_llm_url_input,
+                                  local_llm_model_label, self.local_llm_model_input]
         self.local_auto_host_widgets.extend([
             local_llm_url_label,
             self.local_llm_url_input,
@@ -990,75 +1013,195 @@ class SettingsMenu(QDialog):
             self.kokoro_tts_voice_combobox,
         ]
 
-        # Add the horizontal layouts to the main layout
-        layout.addWidget(general_heading)
-        layout.addLayout(theme_layout)
-        layout.addLayout(showtextwithimages_layout)
-        layout.addLayout(earlybuzztimeout_layout)
-        layout.addLayout(allownegative_layout)
-        layout.addLayout(allownegativeinfinal_layout)
-        layout.addLayout(wayback_layout)
-        layout.addSpacing(12)
-        layout.addWidget(images_heading)
-        layout.addWidget(self.use_pexels_checkbox)
-        layout.addLayout(pexels_key_layout)
-        layout.addWidget(self.pexels_status_label)
-        layout.addSpacing(12)
-        layout.addWidget(auto_host_heading)
-        layout.addLayout(auto_host_layout)
-        layout.addLayout(auto_host_provider_layout)
-        layout.addLayout(auto_host_leniency_layout)
-        layout.addLayout(auto_host_voice_layout)
-        layout.addLayout(openai_key_layout)
-        layout.addWidget(openai_key_hint)
-        layout.addLayout(local_llm_url_layout)
-        layout.addLayout(local_llm_model_layout)
-        layout.addLayout(local_stt_url_layout)
-        layout.addLayout(local_stt_model_layout)
-        layout.addLayout(local_tts_preset_layout)
-        layout.addLayout(local_tts_url_layout)
-        layout.addLayout(local_tts_model_layout)
-        layout.addLayout(macos_tts_voice_layout)
-        layout.addLayout(macos_tts_custom_voice_layout)
-        layout.addLayout(kokoro_tts_voice_layout)
-        layout.addWidget(local_hint)
+        # Each settings page scrolls independently; actions stay in the footer.
+        for widget in self.findChildren(QWidget):
+            widget.setStyleSheet("")
+            widget.setPalette(QApplication.palette())
+            widget.setFont(QFont("Helvetica Neue", 12))
+            if isinstance(widget, QComboBox):
+                widget.setMinimumWidth(180)
+                widget.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+                widget.setMinimumContentsLength(16)
+        self.tabs = QTabWidget(self)
+        self.tabs.setDocumentMode(True)
+        def page(title, heading, description):
+            content = QWidget()
+            body = QVBoxLayout(content)
+            body.setContentsMargins(22, 22, 22, 22)
+            body.setSpacing(16)
+            heading.setObjectName('pageTitle')
+            body.addWidget(heading)
+            subtitle = QLabel(description)
+            subtitle.setProperty('muted', True)
+            subtitle.setWordWrap(True)
+            body.addWidget(subtitle)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setWidget(content)
+            self.tabs.addTab(scroll, title)
+            return body
+        def group(body, title, rows):
+            box = QGroupBox(title)
+            inner = QVBoxLayout(box)
+            inner.setContentsMargins(16, 24, 16, 16)
+            inner.setSpacing(12)
+            for row in rows:
+                if isinstance(row, QWidget):
+                    inner.addWidget(row)
+                else:
+                    row.setSpacing(12)
+                    first = row.itemAt(0).widget() if row.count() else None
+                    if isinstance(first, QLabel):
+                        first.setFixedWidth(265)
+                    inner.addLayout(row)
+            body.addWidget(box)
+            return box
+
+        game_body = page('Game', general_heading, 'Set the look, pacing, and scoring rules for your game.')
+        group(game_body, 'Appearance', [theme_layout, showtextwithimages_layout])
+        group(game_body, 'Rules and timing', [earlybuzztimeout_layout, allownegative_layout,
+                                           allownegativeinfinal_layout, wayback_layout])
+        game_body.addStretch()
+
+        from jparty.teams import TeamMode
+        from jparty.team_widgets import TeamSettingsPanel
+        self.team_panel = TeamSettingsPanel(game if isinstance(game, TeamMode) else None, self)
+        team_scroll = QScrollArea()
+        team_scroll.setWidgetResizable(True)
+        team_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        team_scroll.setWidget(self.team_panel)
+        self.team_tab_index = self.tabs.addTab(team_scroll, 'Team mode')
+
+        host_body = page('Auto Host', auto_host_heading, 'Choose who hosts, how answers are judged, and which voice players hear.')
+        group(host_body, 'Hosting', [auto_host_layout, auto_host_provider_layout])
+        restart_hint = QLabel('Turning Auto Host on or off restarts JParty to update phone microphone access. Save changes before starting services.')
+        restart_hint.setWordWrap(True)
+        restart_hint.setProperty('muted', True)
+        host_body.addWidget(restart_hint)
+        group(host_body, 'Answer judging', [judge_provider_layout, auto_host_leniency_layout])
+        self.cloud_group = group(host_body, 'OpenAI', [openai_key_layout, auto_host_voice_layout, openai_key_hint])
+        local_shortcut = QPushButton('Manage local services →')
+        local_shortcut.clicked.connect(lambda: self.tabs.setCurrentIndex(self.services_tab_index))
+        host_body.addWidget(local_shortcut)
+        host_body.addStretch()
+
+        self.services_tab_index = self.tabs.count()
+        services_body = page('Local Services', QLabel('Local Auto Host'), 'Your game-night stack, in one place.')
+        self.services_panel = LocalServicesPanel(self.service_manager, self.service_action_config, self)
+        group(services_body, 'Service status', [self.services_panel])
+        self.llm_group = group(services_body, 'Local LLM · text generation and answer judging', [local_llm_url_layout, local_llm_model_layout])
+        self.stt_group = group(services_body, 'Speech recognition · Whisper', [local_stt_url_layout, local_stt_model_layout])
+        self.voice_group = group(services_body, 'Host voice', [local_tts_preset_layout, local_tts_url_layout,
+            local_tts_model_layout, macos_tts_voice_layout, macos_tts_custom_voice_layout,
+            kokoro_tts_voice_layout, local_hint])
+        self.kev_group = group(services_body, 'Answer judging · Kev', [kev_url_layout, kev_model_layout, kev_hint])
+        services_body.addStretch()
+
+        images_body = page('Images', images_heading, 'Replace missing clue images with photos from Pexels.')
+        self.use_pexels_checkbox.setText('Find replacement images with Pexels')
+        group(images_body, 'Image fallback', [self.use_pexels_checkbox, pexels_key_layout, self.pexels_status_label])
+        images_body.addStretch()
+
         self.auto_host_provider_combobox.currentTextChanged.connect(self.update_auto_host_provider_fields)
+        self.judge_provider_combobox.currentIndexChanged.connect(self.update_judge_provider_fields)
         self.openai_api_key_input.textChanged.connect(lambda _text: self.update_pexels_fields())
         self.local_tts_preset_combobox.currentTextChanged.connect(lambda _text: self.update_local_tts_fields())
         self.macos_tts_voice_combobox.currentTextChanged.connect(lambda _text: self.update_local_tts_fields())
-        self.update_auto_host_provider_fields(self.auto_host_provider_combobox.currentText())
+        self.update_auto_host_provider_fields(self.auto_host_provider_combobox.currentData())
+        self.update_judge_provider_fields()
         self.update_pexels_fields()
 
-        # Add space before the Apply button
-        layout.addSpacing(10)
+        footer = QHBoxLayout()
+        self.settings_feedback = QLabel('Changes apply when you save.')
+        self.settings_feedback.setWordWrap(True)
+        self.settings_feedback.setMinimumWidth(0)
+        self.settings_feedback.setProperty('muted', True)
+        footer.addWidget(self.settings_feedback, 1)
+        self.cancel_button = QPushButton('Close')
+        self.cancel_button.clicked.connect(self.reject)
+        footer.addWidget(self.cancel_button)
+        self.apply_button = QPushButton('Save changes')
+        self.apply_button.setObjectName('primaryButton')
+        self.apply_button.clicked.connect(lambda: self.save_settings(close=False))
+        footer.addWidget(self.apply_button)
+        dialog_layout = QVBoxLayout(self)
+        dialog_layout.setContentsMargins(18, 14, 18, 16)
+        dialog_layout.setSpacing(14)
+        dialog_layout.addWidget(self.tabs, 1)
+        dialog_layout.addLayout(footer)
+        self.service_manager.changed.connect(self.update_service_controls)
+        self.update_service_controls()
+        self.setStyleSheet("""
+            QDialog#SettingsMenu { background: #f3f5fa; }
+            QWidget { color: #243047; font-size: 13px; }
+            QScrollArea, QScrollArea > QWidget > QWidget { background: #f3f5fa; }
+            QTabWidget::pane { border: 0; }
+            QTabBar::tab { padding: 11px 20px; margin-right: 5px; border-radius: 7px; color: #637089; }
+            QTabBar::tab:selected { color: #1d4ed8; background: #e3ebff; font-weight: 600; }
+            QGroupBox { background: white; border: 1px solid #dce2ed; border-radius: 10px;
+                        margin-top: 10px; padding-top: 10px; font-weight: 600; }
+            QGroupBox::title { subcontrol-origin: margin; left: 16px; padding: 0 5px; }
+            QLabel#pageTitle { font-size: 25px; font-weight: 700; color: #14213a; }
+            QLabel[muted="true"] { color: #66748b; font-size: 12px; }
+            QLabel#serviceSummary { font-weight: 600; font-size: 15px; }
+            QLabel#serviceRow[state="ready"] { border-left: 3px solid #24946b; }
+            QLabel#serviceRow[state="offline"] { border-left: 3px solid #d29029; }
+            QLabel#serviceRow { background: #f7f9fc; border-radius: 6px; padding: 10px; font-size: 12px; }
+            QLineEdit, QComboBox { background: white; border: 1px solid #cbd4e2;
+                                  border-radius: 6px; padding: 7px 10px; min-height: 18px; }
+            QLineEdit:focus, QComboBox:focus { border: 1px solid #4777eb; }
+            QComboBox::drop-down { border: 0; width: 24px; }
+            QComboBox::down-arrow { image: none; }
+            QComboBox QAbstractItemView { background: white; color: #243047; selection-background-color: #e3ebff; }
+            QPushButton { background: white; border: 1px solid #cbd4e2; border-radius: 7px;
+                          padding: 9px 15px; font-weight: 600; }
+            QPushButton:hover { background: #edf2fc; border-color: #8da6da; }
+            QPushButton#primaryButton { background: #285ee8; color: white; border: 1px solid #285ee8; }
+            QPushButton#primaryButton:hover { background: #1e4dcc; }
+            QPushButton:disabled { background: #e8ecf3; color: #8994a7; border-color: #dce2ed; }
+            QPlainTextEdit { background: #172238; color: #dce7fb; border: none; border-radius: 8px;
+                             padding: 10px; font-family: Menlo; font-size: 11px; }
+            QScrollBar:vertical { width: 9px; background: transparent; }
+            QScrollBar::handle:vertical { background: #bec8d9; border-radius: 4px; min-height: 30px; }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+        """)
 
-        # Add an "Apply" button
-        self.apply_button = QPushButton("Apply")
-        self.apply_button.clicked.connect(self.save_settings)  # Connect the button's clicked signal to the save_settings method
-        self.apply_button.setStyleSheet("QPushButton { border: 2px solid black; }")
-        self.apply_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.apply_button.setMinimumSize(100, 30)
-        layout.addWidget(self.apply_button, alignment=Qt.AlignmentFlag.AlignHCenter)
+    def update_service_controls(self):
+        self.apply_button.setEnabled(not self.service_manager.busy)
+        self._pexels_local_llm_available = any(
+            row['name'] == 'Text generation' and row['ready'] for row in self.service_manager.results
+        )
+        self.update_pexels_fields()
 
-        # Add space after the Apply button
-        layout.addSpacing(10)
+    def service_action_config(self):
+        draft = self.auto_host_settings()
+        if any(draft.get(key) != self._saved_auto_host.get(key) for key in (
+            'enabled', 'ai_provider', 'judge_provider', 'local_llm_base_url', 'local_llm_model',
+            'local_stt_base_url', 'local_stt_model', 'local_tts_base_url', 'local_tts_model',
+            'local_tts_preset', 'local_tts_voice', 'kev_base_url', 'kev_model',
+        )):
+            raise ValueError('Save your Auto Host changes first, then set up or start services.')
+        return self._saved_auto_host
 
-        # Set the font to bold for all widgets in the layout
-        for i in range(layout.count()):
-            widget = layout.itemAt(i).widget()
-            if widget is not None:
-                font = widget.font()
-                font.setBold(True)
-                widget.setFont(font)
-
-        self.setLayout(layout)
+    def update_judge_provider_fields(self, *_args):
+        is_kev = self.judge_provider_combobox.currentData() == "kev"
+        for widget in self.kev_judge_widgets:
+            widget.setVisible(is_kev)
+        self.kev_group.setVisible(is_kev)
+        self.update_auto_host_provider_fields(None)
 
     def update_auto_host_provider_fields(self, provider):
-        is_local = provider == "local"
+        is_local = self.auto_host_provider_combobox.currentData() == "local"
         for widget in getattr(self, "openai_auto_host_widgets", []):
             widget.setVisible(not is_local)
+        needs_local_judge = self.judge_provider_combobox.currentData() == "local_binary"
         for widget in getattr(self, "local_auto_host_widgets", []):
-            widget.setVisible(is_local)
+            widget.setVisible(is_local or (needs_local_judge and widget in self.local_llm_widgets))
+        self.cloud_group.setVisible(not is_local)
+        self.llm_group.setVisible(is_local or needs_local_judge)
+        for group in (self.stt_group, self.voice_group):
+            group.setVisible(is_local)
         self.update_local_tts_fields()
 
     def update_pexels_fields(self):
@@ -1071,11 +1214,10 @@ class SettingsMenu(QDialog):
         if has_llm:
             self.pexels_status_label.setText("Stored locally on this computer. Leave blank to use PEXELS_API_KEY.")
         else:
-            self.use_pexels_checkbox.setChecked(False)
-            self.pexels_status_label.setText("Add an OpenAI API key or start your local LLM, then reopen Settings to enable Pexels.")
+            self.pexels_status_label.setText("Add an OpenAI API key or start your local LLM, then click Check status in Local Services to enable Pexels.")
 
     def update_local_tts_fields(self):
-        is_local = self.auto_host_provider_combobox.currentText() == "local"
+        is_local = self.auto_host_provider_combobox.currentData() == "local"
         preset = self.local_tts_preset_combobox.currentData() or "macos_say"
         if preset == "macos_personal_voice":
             preset = "macos_say"
@@ -1098,9 +1240,56 @@ class SettingsMenu(QDialog):
     def selected_kokoro_tts_voice(self):
         return self.kokoro_tts_voice_combobox.currentData() or "af_heart"
 
-    def save_settings(self):
+    def auto_host_settings(self):
+        auto_host = self._saved_auto_host.copy()
+        auto_host['enabled'] = bool(self.auto_host_combobox.currentData())
+        auto_host['ai_provider'] = self.auto_host_provider_combobox.currentData()
+        auto_host['judge_provider'] = self.judge_provider_combobox.currentData() or 'local_binary'
+        auto_host['kev_base_url'] = self.kev_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['kev_base_url']
+        auto_host['kev_model'] = self.kev_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['kev_model']
+        auto_host['openai_api_key'] = self.openai_api_key_input.text().strip()
+        auto_host['tts_voice'] = self.auto_host_voice_combobox.currentData() or 'coral'
+        auto_host['local_llm_base_url'] = self.local_llm_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_base_url']
+        auto_host['local_llm_model'] = self.local_llm_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_model']
+        auto_host['local_stt_base_url'] = self.local_stt_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_base_url']
+        auto_host['local_stt_model'] = self.local_stt_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_model']
+        tts_preset = self.local_tts_preset_combobox.currentData() or 'macos_say'
+        if tts_preset == 'macos_personal_voice':
+            tts_preset = 'macos_say'
+        auto_host['local_tts_preset'] = tts_preset
+        if tts_preset == 'macos_say':
+            auto_host['local_tts_base_url'] = self.local_tts_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_base_url']
+            auto_host['local_tts_model'] = 'macos-say'
+            auto_host['local_tts_voice'] = self.selected_macos_tts_voice()
+        elif tts_preset == 'kokoro':
+            auto_host['local_tts_base_url'] = self.local_tts_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_base_url']
+            auto_host['local_tts_model'] = 'kokoro'
+            auto_host['local_tts_voice'] = self.selected_kokoro_tts_voice()
+        else:
+            auto_host['local_tts_base_url'] = self.local_tts_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_base_url']
+            auto_host['local_tts_model'] = self.local_tts_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_model']
+            auto_host['local_tts_voice'] = self.macos_tts_custom_voice_input.text().strip()
+        auto_host['selection_mode'] = 'voice_with_gui_fallback'
+        auto_host['answer_judging'] = 'auto_with_challenge'
+        auto_host['leniency'] = self.auto_host_leniency_combobox.currentText()
+
+        return auto_host
+
+    def save_settings(self, close=True):
         logging.info("save_settings method called")  # Debugging line
-        new_settings = {}
+        if self.service_manager.busy:
+            self.settings_feedback.setText("Wait for the service command to finish before saving.")
+            return
+        if not self.earlybuzztimeout_combobox.hasAcceptableInput():
+            self.settings_feedback.setText("Buzzer timeout must be a number from 0 to 10000 ms.")
+            self.tabs.setCurrentIndex(0)
+            self.earlybuzztimeout_combobox.setFocus()
+            return
+        team_error = self.team_panel.validation_error()
+        if team_error:
+            self.settings_feedback.setText(team_error)
+            self.tabs.setCurrentIndex(self.team_tab_index)
+            return
         requires_restart = False
 
         with open(config_path, 'r') as f:
@@ -1120,51 +1309,26 @@ class SettingsMenu(QDialog):
         earlybuzztimeout = int(self.earlybuzztimeout_combobox.text())
 
         # Show allow negative setting
-        allownegative = self.allownegative_combobox.currentText()
+        allownegative = self.allownegative_combobox.currentData()
 
         # Show allow negative in final setting
-        allownegativeinfinal = self.allownegativeinfinal_combobox.currentText()
+        allownegativeinfinal = self.allownegativeinfinal_combobox.currentData()
 
         # Use Wayback Machine first setting
-        use_wayback_first = self.wayback_combobox.currentText() == "True"
+        use_wayback_first = bool(self.wayback_combobox.currentData())
 
-        auto_host = config.get('auto_host', DEFAULT_CONFIG['auto_host']).copy()
-        old_auto_host_enabled = bool(auto_host.get('enabled'))
-        auto_host['enabled'] = self.auto_host_combobox.currentText() == "True"
-        # Toggling Auto Host changes whether the buzzer server serves HTTPS,
-        # so a restart is needed to (re)start or stop the HTTPS listener.
-        if auto_host['enabled'] != old_auto_host_enabled:
+        auto_host = self.auto_host_settings()
+        if auto_host['enabled'] != bool(config.get('auto_host', {}).get('enabled')):
             requires_restart = True
-        auto_host['ai_provider'] = self.auto_host_provider_combobox.currentText()
-        auto_host['openai_api_key'] = self.openai_api_key_input.text().strip()
-        auto_host['tts_voice'] = self.auto_host_voice_combobox.currentData() or 'coral'
-        auto_host['local_llm_base_url'] = self.local_llm_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_base_url']
-        auto_host['local_llm_model'] = self.local_llm_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_model']
-        auto_host['local_stt_base_url'] = self.local_stt_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_base_url']
-        auto_host['local_stt_model'] = self.local_stt_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_model']
-        tts_preset = self.local_tts_preset_combobox.currentData() or 'macos_say'
-        if tts_preset == 'macos_personal_voice':
-            tts_preset = 'macos_say'
-        auto_host['local_tts_preset'] = tts_preset
-        if tts_preset == 'macos_say':
-            auto_host['local_tts_base_url'] = DEFAULT_CONFIG['auto_host']['local_tts_base_url']
-            auto_host['local_tts_model'] = 'macos-say'
-            auto_host['local_tts_voice'] = self.selected_macos_tts_voice()
-        elif tts_preset == 'kokoro':
-            auto_host['local_tts_base_url'] = DEFAULT_CONFIG['auto_host']['local_tts_base_url']
-            auto_host['local_tts_model'] = 'kokoro'
-            auto_host['local_tts_voice'] = self.selected_kokoro_tts_voice()
-        else:
-            auto_host['local_tts_base_url'] = self.local_tts_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_base_url']
-            auto_host['local_tts_model'] = self.local_tts_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_tts_model']
-            auto_host['local_tts_voice'] = self.macos_tts_custom_voice_input.text().strip()
-        auto_host['selection_mode'] = 'voice_with_gui_fallback'
-        auto_host['answer_judging'] = 'auto_with_challenge'
-        auto_host['leniency'] = self.auto_host_leniency_combobox.currentText()
 
         image_fallback = config.get('image_fallback', DEFAULT_CONFIG['image_fallback']).copy()
-        image_fallback['use_pexels'] = self.use_pexels_checkbox.isChecked() and self.use_pexels_checkbox.isEnabled()
+        image_fallback['use_pexels'] = self.use_pexels_checkbox.isChecked()
         image_fallback['pexels_api_key'] = self.pexels_api_key_input.text().strip()
+
+        if not self.team_panel.apply():
+            self.settings_feedback.setText('Could not save team setup. Check your teams and try again.')
+            self.tabs.setCurrentIndex(self.team_tab_index)
+            return
 
         # Save config
         logging.info("Saving settings...")
@@ -1204,4 +1368,8 @@ class SettingsMenu(QDialog):
             # Restart the application
             # Use sys.executable as both the path and the first argument
             os.execv(sys.executable, [sys.executable] + sys.argv)
-        self.accept()  # Close the dialog
+        self._saved_auto_host = auto_host.copy()
+        self.service_manager.configure(auto_host)
+        self.settings_feedback.setText("Settings saved.")
+        if close:
+            self.accept()

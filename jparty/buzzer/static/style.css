@@ -1,4 +1,18 @@
+@font-face {
+    font-family: Anton;
+    src: url("vendor/Anton-Regular.ttf") format("truetype");
+    font-display: swap;
+}
+
+/* The buzzer only used W3's container and base sizing rules. Keep them local. */
+html { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+html, body { font-family: Verdana, sans-serif; font-size: 15px; line-height: 1.5; }
+button, input, select, textarea { font: inherit; margin: 0; }
+.w3-container { padding: 0.01em 16px; }
+
 body {
+    margin: 0;
     background-image: url(background.jpg);
     text-align: center;
 }
@@ -291,3 +305,11 @@ button:active {
         font-size: clamp(14px, 4vw, 18px);
     }
 }
+
+/* Shared team identity stays visible on every phone page. */
+#team-banner { position: relative; padding: 12px; background: #111144; color: white;
+  text-align: center; font-size: 16px; }
+#team-banner select, #join-team-section select { max-width: 95%; padding: 8px;
+  margin: 6px; font-size: 18px; color: #111; }
+#join-team-section { text-align: center; color: white; }
+#team-error { color: #ffcc80; }

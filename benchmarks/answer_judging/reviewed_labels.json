@@ -1,0 +1,487 @@
+{
+  "manifest_sha256": "1546f1276a0bc95e685ffd2a62edd6f1ff0aba1ac2429a630a091481a96e3981",
+  "reviewer": "Codex semantic review; provisional, not independent human adjudication",
+  "policy": "Normal leniency: accept sufficient surnames and established aliases; reject generic fragments; leave debatable cases unscored. Labels made without inspecting model predictions.",
+  "labels": {
+    "5135-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5135-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "5747-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5747-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "1424-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "1424-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3369-0:partial_prefix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3369-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3101-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3101-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "1230-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "1230-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3419-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3419-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4965-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4965-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5060-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5060-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3639-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3639-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4997-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4997-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4086-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4086-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4722-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4722-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4676-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4676-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4172-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4172-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4518-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4518-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4953-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4953-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5832-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5832-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3098-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3098-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "970-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "970-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3182-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3182-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4654-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4654-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5133-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5133-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "2051-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "2051-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "5539-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5539-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "6187-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "6187-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3038-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3038-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3172-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3172-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3717-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3717-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3105-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3105-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5858-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5858-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4467-0:partial_prefix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "4467-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "3883-0:partial_prefix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3883-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5156-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5156-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5090-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5090-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3363-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3363-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "4589-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4589-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4993-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4993-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5483-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5483-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4817-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4817-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3735-0:partial_prefix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3735-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3847-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3847-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "5651-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5651-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "1265-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "1265-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5878-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5878-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3217-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3217-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3005-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3005-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5657-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5657-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4237-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4237-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5398-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5398-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4339-0:partial_prefix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4339-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3059-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3059-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "5870-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5870-0:partial_suffix": {
+      "gold": null,
+      "reason": "Debatable shorthand, translation, or malformed source token; excluded pending human review"
+    },
+    "4041-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4041-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4191-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4191-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "5186-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "5186-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3552-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3552-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4137-0:partial_prefix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "4137-0:partial_suffix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4532-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "4532-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    },
+    "3312-0:partial_prefix": {
+      "gold": false,
+      "reason": "Incomplete name/title/phrase or an article, qualifier, or generic noun rather than the required answer"
+    },
+    "3312-0:partial_suffix": {
+      "gold": true,
+      "reason": "Sufficient surname, established short name, or detail already supplied by the clue/category"
+    }
+  }
+}

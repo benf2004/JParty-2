@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/local_kev_service.sh"
+
 APP_SUPPORT="${HOME}/Library/Application Support/JParty/local-auto-host"
 REMOVE_PACKAGES="${JPARTY_UNINSTALL_PACKAGES:-ask}"
 
@@ -12,7 +15,9 @@ This removes/stops:
   - Ollama service process used by the setup script
   - whisper.cpp server process
   - macOS TTS bridge process
+  - managed Kev server process and its local environment
   - downloaded JParty Whisper model files
+  (Shared Hugging Face model caches and the uv package are kept.)
   - optional Homebrew packages installed for local Auto Host
 
 It does NOT uninstall Homebrew.
@@ -61,6 +66,8 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This helper is for macOS."
   exit 1
 fi
+
+stop_kev
 
 stop_process "ollama serve" "Ollama"
 stop_process "whisper-server" "whisper.cpp server"

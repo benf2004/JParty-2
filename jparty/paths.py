@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 def get_user_data_dir():
-    if sys.platform == "darwin":
+    if os.environ.get("JPARTY_DATA_DIR"):
+        path = Path(os.environ["JPARTY_DATA_DIR"]).expanduser()
+    elif sys.platform == "darwin":
         # Standard macOS location: ~/Library/Application Support/JParty
         path = Path.home() / "Library" / "Application Support" / "JParty"
     else:

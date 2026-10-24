@@ -150,6 +150,7 @@ class DisplayWindow(QMainWindow):
         self.game.close()
 
     def player_widget(self, player):
+        player = self.game.scoring_contestant(player)
         for pw in self.scoreboard.player_widgets:
             if pw.player is player:
                 return pw

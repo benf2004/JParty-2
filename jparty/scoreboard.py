@@ -9,7 +9,7 @@ from PyQt6.QtGui import (
     QFontDatabase
 )
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton
-from PyQt6.QtCore import Qt, QSize, QPoint
+from PyQt6.QtCore import Qt, QSize, QPoint, QTimer
 
 import time
 from threading import Thread
@@ -19,6 +19,7 @@ from functools import partial
 from jparty.style import MyLabel
 from jparty.utils import resource_path, add_shadow
 from jparty.constants import DEFAULT_CONFIG
+from jparty.teams import Team, member_name
 
 
 class NameLabel(MyLabel):
@@ -70,6 +71,10 @@ class PlayerWidget(QWidget):
         self.buzz_delay = None # Holds stats for buzz delay
 
         self.name_label = NameLabel(player.name, self)
+        self.member_label = MyLabel("", lambda: self.height() * 0.06, self)
+        self.member_label.setWordWrap(True)
+        self.member_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.member_label.setVisible(isinstance(player, Team))
         self.score_label = MyLabel("$0", self.startScoreFontSize, self)
         self.score_label.setFont(QFont(QFontDatabase.applicationFontFamilies(0)))
         self.stats_label = MyLabel("", self.height() * 0.8, self)
@@ -102,6 +107,9 @@ class PlayerWidget(QWidget):
         layout.addWidget(self.score_label, 10)
         layout.addStretch(15)
         layout.addWidget(self.name_label, 40)
+        if isinstance(player, Team):
+            layout.addWidget(self.member_label, 12)
+            self.refresh_team_label()
         layout.addWidget(self.stats_label, 10)
         layout.addWidget(self.dummy_stats_label, 10)
         layout.addStretch(2)
@@ -149,9 +157,23 @@ class PlayerWidget(QWidget):
 
         self.score_label.setText(f"{'-$' if score < 0 else '$'}{abs(score):,}")
 
-    def update_stats(self, delay, timing="early"):
-        if self.buzz_delay is not None or not self.parent().parent().parent().host():
+    def refresh_team_label(self):
+        if not isinstance(self.player, Team):
             return
+        self.name_label.setText(self.player.name)
+        answering = self.game.answering_player
+        if answering in self.player.members:
+            text = "Answering: " + member_name(answering)
+        else:
+            text = "Acting: " + member_name(self.player.representative)
+        self.member_label.setText(text)
+        self.update_score()
+
+    def update_stats(self, delay, timing="early", player=None):
+        player = player or self.player
+        if getattr(player, "_display_buzz_delay", None) is not None or not self.parent().parent().parent().host():
+            return
+        player._display_buzz_delay = delay
         self.buzz_delay = delay
         if timing == "early":
             self.stats_label.setText('{0:.2f}s early'.format(self.buzz_delay))
@@ -161,14 +183,17 @@ class PlayerWidget(QWidget):
             self.stats_label.setText('{0:.2f}s first buzz'.format(self.buzz_delay))
         
         # Log stats for aggregation
-        self.player.buzz_delays.append({
+        player.buzz_delays.append({
             "delay": self.buzz_delay,
             "timing": timing
         })
     
     def clear_stats(self):
         self.buzz_delay = None
-        self.player.buzz_time = None
+        members = self.player.members if isinstance(self.player, Team) else [self.player]
+        for player in members:
+            player.buzz_time = None
+            player._display_buzz_delay = None
         self.stats_label.setText('')
 
     def run_lights(self):
@@ -191,18 +216,21 @@ class PlayerWidget(QWidget):
         self.set_lights(True)
         self.update()
     
-    def run_timeout_lights(self):
-        self.player.istimedout = True
-        self.__timeout_thread = Thread(target=self.__timeout_lights, name="timeout_lights")
+    def run_timeout_lights(self, player=None):
+        player = player or self.player
+        player.istimedout = True
+        self.__timeout_thread = Thread(target=self.__timeout_lights, args=(player,), name="timeout_lights")
         self.__timeout_thread.start()
     
-    def __timeout_lights(self):
-        self.background = self.timeout_background
-        self.update()
+    def __timeout_lights(self, player):
+        if not isinstance(self.player, Team):
+            self.background = self.timeout_background
+            self.update()
         time.sleep(self.game.config.get('earlybuzztimeout', DEFAULT_CONFIG['earlybuzztimeout']) / 1000)
-        self.player.istimedout = False
-        self.set_lights(False)
-        self.update()
+        player.istimedout = False
+        if not isinstance(self.player, Team):
+            self.set_lights(False)
+            self.update()
 
     def mousePressEvent(self, event):
         if self.game.soliciting_player:
@@ -232,9 +260,20 @@ class HostPlayerWidget(PlayerWidget):
         super().__init__(game, player, parent)
         self.remove_button = QPushButton("", self)
         # self.remove_button.setStyleSheet("color: red")
-        self.remove_button.clicked.connect(partial(self.game.remove_player, player))
-        self.remove_button.setIcon(QIcon(resource_path("close-icon.png")))
+        if isinstance(player, Team):
+            self.remove_button.clicked.connect(self.show_roster)
+            self.remove_button.setToolTip("Manage team members")
+        else:
+            self.remove_button.clicked.connect(partial(self.game.remove_player, player))
+        if isinstance(player, Team):
+            self.remove_button.setText("…")
+        else:
+            self.remove_button.setIcon(QIcon(resource_path("close-icon.png")))
         self.remove_button.show()
+
+    def show_roster(self):
+        from jparty.team_widgets import TeamRosterDialog
+        TeamRosterDialog(self.game, self).exec()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -264,21 +303,41 @@ class ScoreBoard(QWidget):
 
     def refresh_players(self):
         for pw in list(self.player_widgets):  # copy list so we can remove elements
-            if pw.player not in self.game.players:
+            if pw.player not in self.game.contestants():
                 i = self.player_layout.indexOf(pw)
                 self.player_layout.takeAt(i + 1)  # remove stretch
                 self.player_layout.takeAt(i)
                 self.player_widgets.remove(pw)
                 pw.deleteLater()
 
-        for (i, p) in enumerate(self.game.players):
+        for (i, p) in enumerate(self.game.contestants()):
             if not any(pw.player is p for pw in self.player_widgets):
                 pw = self.create_player_widget(p)
                 self.player_layout.insertWidget(2 * i + 1, pw)
                 self.player_layout.insertStretch(2 * i + 2)
                 self.player_widgets.append(pw)
 
+        for pw in self.player_widgets:
+            pw.refresh_team_label()
+        self.size_team_podiums()
+        QTimer.singleShot(0, self.size_team_podiums)
         self.update()
+
+    def size_team_podiums(self):
+        teams = [pw for pw in self.player_widgets if isinstance(pw.player, Team)]
+        if not teams:
+            return
+        margins = self.player_layout.contentsMargins()
+        height = max(1, self.height() - margins.top() - margins.bottom())
+        available = max(1, self.width() - margins.left() - margins.right()
+                        - max(0, self.player_layout.spacing()) * 2 * len(teams))
+        width = max(1, int(min(height * PlayerWidget.aspect_ratio, available / len(teams))))
+        for pw in teams:
+            pw.setFixedWidth(width)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.size_team_podiums()
 
     def create_player_widget(self, player):
         return PlayerWidget(self.game, player, self)
@@ -296,8 +355,8 @@ class HostScoreBoard(ScoreBoard):
 
     def hide_close_buttons(self):
         for pw in self.player_widgets:
-            pw.remove_button.setVisible(False)
-            pw.remove_button.setEnabled(False)
+            pw.remove_button.setVisible(isinstance(pw.player, Team))
+            pw.remove_button.setEnabled(isinstance(pw.player, Team))
     
     def show_close_buttons(self):
         for pw in self.player_widgets:

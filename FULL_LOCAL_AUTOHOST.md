@@ -2,6 +2,57 @@
 
 This guide gets Auto Host running without paid AI APIs. Everything runs on your Mac.
 
+## Start from JParty
+
+1. Open **Settings → Auto Host**, choose **Local · on this Mac**, and select your answer judge.
+2. Save changes. If you enable Auto Host for the first time, JParty restarts to enable phone microphone access.
+3. Open **Settings → Local Services** and click **Set up** once to install tools and models. Choose your voice engine in this tab before setup, and save changes first.
+4. For later sessions, click **Start services**. Check each component's status and the activity log; the game becomes startable when its required services are ready, a game is loaded, and players have joined.
+5. Click **Stop services** after your session.
+
+Setup/start/stop run in the background, and closing Settings leaves an active command running. Reopen **Settings → Local Services** to view status and progress. Save is disabled while a command is running. Automatic management is macOS-only; other platforms can use externally managed servers and the same readiness checks. If Homebrew has not been installed, install it from [brew.sh](https://brew.sh) in Terminal first; the activity log will prompt you to do so.
+
+The default answer judge uses **Qwen2.5-7B with fast true/false output**, sharing Ollama with text generation. Empty answers are rejected and normalized exact matches are accepted locally; all other answers reach the judge. See [benchmark results](benchmarks/answer_judging/RESULTS.md).
+
+## Optional: Kev-0.8B answer judging
+
+Kev can judge answers while Ollama continues to handle clue selection, speech normalization, and image search text. Keep **Auto Host AI provider** set to `local`, and select **Answer judge → Kev (local decision model)** in Settings.
+
+The full-local scripts install and manage Kev when enabled with `JPARTY_LOCAL_KEV_ENABLED=1` in `~/Library/Application Support/JParty/local-auto-host/kev`, with a separate Python 3.13 environment. Setup installs `uv` if needed, checks out the `kev-1.0` server release, and downloads the model when starting it. This requires several GB of disk space and an internet connection. The scripts print the Settings values to use and do not edit your JParty configuration.
+
+```bash
+scripts/setup_full_local_auto_host_macos.sh
+scripts/start_full_local_auto_host_macos.sh
+scripts/stop_full_local_auto_host_macos.sh
+```
+
+Game-night starts use cached model files only. To enable Kev, prefix setup/start with `JPARTY_LOCAL_KEV_ENABLED=1`. Stop still shuts down a managed Kev process even when that flag is disabled. Existing full-local installations need one setup run to install Kev before using the new start script.
+
+Overrides (use the same values for setup and start):
+
+- `JPARTY_LOCAL_KEV_PORT=8009`: loopback server port; copy the printed URL into JParty Settings.
+- `JPARTY_LOCAL_KEV_CHECKPOINT=jaredpalmer/kev-0.8b@v1.0`: checkpoint to load. Run setup after changing it to download the weights. Stop the existing server before changing the checkpoint or port.
+- `JPARTY_KEV_START_TIMEOUT=180`: readiness polling limit in seconds (setup defaults to 1800 to allow downloads).
+
+Kev logs go to `~/Library/Application Support/JParty/local-auto-host/kev-server.log`. Stop only terminates the server recorded by JParty, leaving other Kev installations alone. Uninstall also stops this process and offers to remove its checkout/environment with the existing local model directory; shared Hugging Face caches and `uv` remain installed.
+
+For manual setup instead of the full-local scripts, install the [Kev server](https://github.com/jaredpalmer/kev) in a separate directory:
+
+```bash
+git clone https://github.com/jaredpalmer/kev.git
+cd kev
+uv sync --extra serve
+uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.8b@v1.0 --port 8009
+```
+
+The first run downloads the base model and adapter. Apple Silicon serving uses MLX automatically. Leave **Kev URL** at `http://localhost:8009/v1` and **Kev served model** at `kev-latest`; this is the server's API alias for the checkpoint loaded by `--run`, not the Hugging Face download name.
+
+Fast answer checks still run before Kev. Remaining answers go to a yes/no decision using the clue, expected answer, transcript, and leniency setting. The returned yes probability determines correctness at 0.5; confidence is the probability of the chosen verdict. Reasons are fixed feedback text because Kev does not generate an explanation.
+
+If Kev fails, times out, or returns an invalid probability, JParty uses the configured Auto Host AI provider and a conservative exact-only fallback. The default Kev request timeout is three seconds; override it with `JPARTY_KEV_JUDGE_TIMEOUT` (seconds). The full-local scripts manage Kev alongside Ollama, STT, and TTS; manually installed Kev servers must be started and stopped separately.
+
+Kev is experimental for Jeopardy judging. Check its decisions against labeled game answers before relying on it for scoring; this integration does not establish its accuracy on your clues.
+
 ## What You Are Installing
 
 - **Ollama** runs the local LLM. JParty uses it to understand clue choices, normalize clue speech, and judge ambiguous answers.

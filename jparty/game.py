@@ -1,9 +1,10 @@
-from PyQt6.QtCore import Qt, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QObject, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QInputDialog, QApplication, QDialog, QVBoxLayout, QPushButton, QSpinBox, QLabel, QGraphicsDropShadowEffect
 from PyQt6.QtGui import QColor
 
 import threading
 import time
+import math
 from dataclasses import dataclass
 import os
 import sys
@@ -22,6 +23,8 @@ from jparty.environ import root
 from jparty.stats import StatsBox
 from jparty.paths import config_path
 from jparty.auto_host import AutoHostController
+from jparty.local_services import LocalServiceManager
+from jparty.teams import TeamMode, Team
 from jparty.image_fallback import NOT_FOUND_IMAGE_CONTENT, load_question_image
 
 
@@ -185,7 +188,9 @@ class GameData:
     comments: str
 
 
-class Game(QObject):
+class Game(QObject, TeamMode):
+    team_action_trigger = pyqtSignal(object)
+    teams_changed = pyqtSignal()
     buzz_trigger = pyqtSignal(int)
     new_player_trigger = pyqtSignal()
     wager_trigger = pyqtSignal(int, int)
@@ -203,6 +208,8 @@ class Game(QObject):
     auto_final_correct_trigger = pyqtSignal()
     auto_final_incorrect_trigger = pyqtSignal()
     auto_start_game_trigger = pyqtSignal()
+    cancel_start_game_trigger = pyqtSignal()
+    start_countdown_changed = pyqtSignal(dict)
     auto_close_game_trigger = pyqtSignal()
     FINAL_KEYSTROKE_EVENTS = (
         "OPEN_FINAL",
@@ -275,6 +282,8 @@ class Game(QObject):
 
         self.current_round = None
         self.players = []
+        self.init_teams()
+        self.team_action_trigger.connect(self.handle_team_action)
 
         self.active_question = None
         self.accepting_responses = False
@@ -293,6 +302,7 @@ class Game(QObject):
 
         self.buzzer_controller = None
         self.auto_host = AutoHostController(self)
+        self.local_services = LocalServiceManager(self.config.get('auto_host', {}), self)
 
         self.keystroke_manager = KeystrokeManager()
 
@@ -388,7 +398,15 @@ class Game(QObject):
         self.auto_final_show_answer_trigger.connect(self.final_show_answer)
         self.auto_final_correct_trigger.connect(self.final_correct_answer)
         self.auto_final_incorrect_trigger.connect(self.final_incorrect_answer)
-        self.auto_start_game_trigger.connect(self.start_game)
+        self.start_countdown_deadline = None
+        self.start_countdown_players = ()
+        self.start_countdown_seconds = 0
+        self.start_countdown_timer = QTimer(self)
+        self.start_countdown_timer.setInterval(50)
+        self.start_countdown_timer.timeout.connect(self.update_start_countdown)
+        self.auto_start_game_trigger.connect(self.request_start_game)
+        self.cancel_start_game_trigger.connect(self.cancel_start_game)
+        self.local_services.changed.connect(self._auto_host_services_changed)
         self.auto_close_game_trigger.connect(self.close_game)
 
         # Setup video server
@@ -410,7 +428,17 @@ class Game(QObject):
         stats_box.exec()
 
     def startable(self):
-        return self.valid_game() and len(self.buzzer_controller.connected_players) > 0
+        return (self.valid_game() and len(self.buzzer_controller.connected_players) > 0
+                and self.auto_host_ready() and self.teams_ready())
+
+    def auto_host_ready(self):
+        return not self.auto_host.enabled or self.local_services.ready
+
+    def _auto_host_services_changed(self):
+        if self.current_round is None and self.buzzer_controller is not None:
+            if not self.auto_host_ready():
+                self.cancel_start_game('Start cancelled: Auto Host services are not ready')
+            self.publish_start_countdown()
 
     def begin(self):
         self.song_player.play(repeat=True)
@@ -429,10 +457,114 @@ class Game(QObject):
         except Exception:
             logging.exception(f"Failed to play sound: {file_name}")
 
-    def start_game(self):
+    def start_countdown_state(self, message=""):
+        if self.auto_host.enabled and not self.auto_host_ready() and not message:
+            message = 'Auto Host needs attention. Ask the host to open Settings → Local Services.'
+        return {
+            "seconds_remaining": self.start_countdown_seconds,
+            "checking_services": bool(getattr(self, '_start_check_pending', False)),
+            "can_start_game": (self.current_round is None and self.auto_host.enabled
+                               and self.auto_host_ready()),
+            "message": message,
+        }
+
+    def publish_start_countdown(self, message=""):
+        state = self.start_countdown_state(message)
+        self.start_countdown_changed.emit(state)
+        for player in self.buzzer_controller.connected_players:
+            if player.waiter:
+                player.waiter.send("START_GAME_COUNTDOWN", json.dumps(state))
+
+    def request_start_game(self):
+        if (self.current_round is not None or self.start_countdown_deadline is not None
+                or getattr(self, '_start_check_pending', False)):
+            return
+        if not self.startable():
+            message = ("Auto Host is not ready. Open Settings → Local Services."
+                       if not self.auto_host_ready() else "Select a valid game and join before starting")
+            if getattr(self, "team_mode", False) and not self.teams_ready():
+                message = "Assign all players to at least two teams before starting"
+            self.publish_start_countdown(message)
+            return
+        self.start_countdown_players = tuple(self.buzzer_controller.connected_players)
+        self.start_countdown_roster_version = getattr(self, "roster_version", 0)
+        self.start_countdown_deadline = time.monotonic() + 3
+        self.start_countdown_seconds = 3
+        self.publish_start_countdown()
+        self.start_countdown_timer.start()
+
+    def cancel_start_game(self, message="Start cancelled"):
+        if getattr(self, '_start_check_pending', False):
+            self._start_check_pending = False
+            self.publish_start_countdown(message)
+        if self.start_countdown_deadline is None:
+            return
+        self.start_countdown_timer.stop()
+        self.start_countdown_deadline = None
+        self.start_countdown_seconds = 0
+        self.start_countdown_players = ()
+        self.publish_start_countdown(message)
+
+    def update_start_countdown(self):
+        if self.start_countdown_deadline is None:
+            return
+        # Check the live roster as well as the queued new-player notification.
+        if (tuple(self.buzzer_controller.connected_players) != self.start_countdown_players
+                or getattr(self, "roster_version", 0) != getattr(self, "start_countdown_roster_version", 0)):
+            self.cancel_start_game("Start cancelled: players changed")
+            return
+        if not self.startable() or self.current_round is not None:
+            self.cancel_start_game("Start cancelled: game is not ready")
+            return
+        seconds = max(0, math.ceil(self.start_countdown_deadline - time.monotonic()))
+        if seconds == 0:
+            self.start_countdown_timer.stop()
+            self.start_countdown_deadline = None
+            self.start_countdown_seconds = 0
+            self.start_game()
+        elif seconds != self.start_countdown_seconds:
+            self.start_countdown_seconds = seconds
+            self.publish_start_countdown()
+
+    def start_game(self, services_verified=False):
+        if not self.teams_ready():
+            self.publish_start_countdown("Assign all players to at least two teams before starting")
+            return
         if self.current_round is not None:
             return
+        if self.auto_host.enabled:
+            if not self.auto_host_ready():
+                self.cancel_start_game('Start cancelled: Auto Host services are not ready')
+                self.publish_start_countdown('Auto Host is not ready. Open Settings → Local Services.')
+                return
+            if not services_verified:
+                # Recheck live endpoints at the final boundary, including direct
+                # starts, instead of trusting the last periodic status snapshot.
+                if getattr(self, '_start_check_pending', False):
+                    return
+                token = object()
+                self._start_check_pending = token
+                self.publish_start_countdown('Checking Auto Host services…')
+                roster = tuple(self.buzzer_controller.connected_players)
+                roster_version = getattr(self, "roster_version", 0)
+                def checked():
+                    if self._start_check_pending is not token:
+                        return
+                    self._start_check_pending = False
+                    if (roster == tuple(self.buzzer_controller.connected_players)
+                            and roster_version == getattr(self, "roster_version", 0) and self.startable()):
+                        self.start_game(services_verified=True)
+                    else:
+                        self.publish_start_countdown('Start cancelled: Auto Host or players are not ready')
+                self.local_services.refresh(callback=checked)
+                return
+        self.start_countdown_timer.stop()
+        self.start_countdown_deadline = None
+        self.start_countdown_seconds = 0
+        self.start_countdown_players = ()
         self.current_round = self.data.rounds[0]
+        self.publish_start_countdown()
+        self.host_display.welcome_widget.save_history()
         self.dc.hide_welcome_widgets()
         self.dc.board_widget.load_round(self.current_round)
         self.buzzer_controller.accepting_players = False
@@ -442,6 +574,9 @@ class Game(QObject):
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         self.auto_host.refresh_config()
+        if self.team_mode and self.players:
+            self.set_player_in_control(self.contestants()[0].representative)
+        self.broadcast_teams()
         self.auto_host.on_game_started()
 
         # preload images for first round
@@ -466,6 +601,7 @@ class Game(QObject):
         pass
 
     def new_player(self):
+        self.cancel_start_game("Start cancelled: a new player joined")
         self.players = self.buzzer_controller.connected_players
         self.dc.scoreboard.refresh_players()
         self.host_display.welcome_widget.check_start()
@@ -473,8 +609,27 @@ class Game(QObject):
             self.auto_host.on_new_player(self.players[-1])
 
     def remove_player(self, player):
+        if player not in self.players:
+            return
+        if getattr(self, "team_mode", False) and not self.can_remove_team_member(player):
+            return
+        was_in_control = self.auto_host.player_in_control is player
+        team = getattr(player, "team", None)
+        if team and team.representative is player and len(team.members) > 1:
+            self.transfer_representative(next(p for p in team.members if p is not player))
         self.players.remove(player)
-        player.waiter.close()
+        if team:
+            team.members.remove(player)
+            if not team.members:
+                team.representative = None
+            # Retain the ledger reference for already-recorded attempts and
+            # dispute corrections after this connection leaves the roster.
+        if getattr(self, "team_mode", False):
+            self.roster_changed()
+        self.buzzer_controller.close_player(player)
+        if was_in_control and self.auto_host.player_in_control is player:
+            fallback = (self.contestants()[0] if self.contestants() else None)
+            self.set_player_in_control(self.representative(fallback))
         self.dc.scoreboard.refresh_players()
         self.host_display.welcome_widget.check_start()
 
@@ -518,7 +673,7 @@ class Game(QObject):
         for player in self.players:
             if player.buzz_time is not None:
                 time_elapsed = datetime.datetime.now() - player.buzz_time
-                self.dc.player_widget(player).update_stats(time_elapsed.total_seconds(), "early")
+                self.dc.player_widget(player).update_stats(time_elapsed.total_seconds(), "early", player)
                 player.buzz_time = None
 
         if not self.timer:
@@ -537,6 +692,10 @@ class Game(QObject):
     def buzz(self, i_player):
         player = self.players[i_player]
 
+        if (getattr(self, "team_mode", False) and self.active_question is not None
+                and self.active_question.dd):
+            return
+
         if self.active_question is None:
             self.dc.player_widget(player).buzz_hint()
             return
@@ -551,23 +710,23 @@ class Game(QObject):
         if self.accepting_responses and self.answering_player is None:
             # First buzz on time
             time_elapsed = datetime.datetime.now() - self.accepting_responses_time
-            self.dc.player_widget(player).update_stats(time_elapsed.total_seconds(), "first")
+            self.dc.player_widget(player).update_stats(time_elapsed.total_seconds(), "first", player)
         elif not self.accepting_responses and self.answering_player is None:
             # Buzzed in too early
             player.buzz_time = datetime.datetime.now()
         else:
             # Buzzed in after someone else
             time_elapsed = datetime.datetime.now() - self.accepting_responses_time
-            self.dc.player_widget(player).update_stats(time_elapsed.total_seconds(), "late")
+            self.dc.player_widget(player).update_stats(time_elapsed.total_seconds(), "late", player)
 
         # Check if player already answered incorrectly
         for prev_player in self.previous_answerer:
-            if prev_player is player:
+            if self.scoring_contestant(prev_player) is self.scoring_contestant(player):
                 already_answered = True
 
         if not self.accepting_responses:
             logging.info(f"player buzzed early")
-            self.dc.player_widget(player).run_timeout_lights()
+            self.dc.player_widget(player).run_timeout_lights(player)
         elif not already_answered:
             logging.info(f"buzz ({time.time():.6f} s)")
             self.accepting_responses = False
@@ -576,6 +735,8 @@ class Game(QObject):
             self.dc.player_widget(player).run_lights()
 
             self.answering_player = player
+            if getattr(self, "team_mode", False):
+                self.broadcast_teams()
             self.keystroke_manager.activate("CORRECT_ANSWER", "INCORRECT_ANSWER")
             self.dc.borders.lights(False)
             self.auto_host.acknowledge_buzz(player)
@@ -606,10 +767,14 @@ class Game(QObject):
         if self.auto_host.enabled and round_complete:
             self.next_round()
             return
+        if getattr(self, "team_mode", False):
+            self.broadcast_teams()
         self.auto_host.after_back_to_board()
 
     def set_player_in_control(self, new_player):
-        for player in self.players:
+        if isinstance(new_player, Team):
+            new_player = new_player.representative
+        for player in self.contestants():
             # Remove glow around player widget
             self.host_display.player_widget(player).setGraphicsEffect(None)
 
@@ -622,6 +787,8 @@ class Game(QObject):
             self.host_display.player_widget(new_player).setGraphicsEffect(effect)
         if getattr(self, "auto_host", None) is not None:
             self.auto_host.player_in_control = new_player
+        if getattr(self, "team_mode", False):
+            self.broadcast_teams()
 
     def next_round(self):
         logging.info("next round")
@@ -640,10 +807,11 @@ class Game(QObject):
             self.dc.load_final(self.current_round.question)
             self.dc.show_player_kick_buttons()
             self.start_final()
-            self.auto_host.on_round_started()
+            if self.final_players():
+                self.auto_host.on_round_started()
         else:
             # Highlight player with least money to have control
-            losing_player = min(self.players, key=lambda p: p.score) if self.players else None
+            losing_player = min(self.contestants(), key=lambda p: p.score) if self.contestants() else None
             self.set_player_in_control(losing_player)
 
             self.dc.board_widget.load_round(self.current_round)
@@ -651,20 +819,23 @@ class Game(QObject):
 
     def start_final(self):
         logging.info("start final")
+        self._final_wagers_complete = False
 
-        for player in self.players:
-            player.wager = None
-            player.finalanswer = ""
-
-        if self.config.get('allownegativeinfinal', 'True') == 'True':
-            for player in self.players:
-                self.dc.player_widget(player).set_lights(True)
-        else:
-            for player in self.players.copy():  # Use copy for iteration
+        for contestant in self.contestants():
+            contestant.wager = None
+            contestant.finalanswer = ""
+            if isinstance(contestant, Team):
+                contestant.final_eligible = (self.config.get('allownegativeinfinal', 'True') == 'True'
+                                             or contestant.score >= 0)
+        if not getattr(self, "team_mode", False) and self.config.get('allownegativeinfinal', 'True') != 'True':
+            for player in self.players.copy():
                 if player.score < 0:
-                    self.remove_player(player)  # Remove from original list
-                else:
-                    self.dc.player_widget(player).set_lights(True)
+                    self.remove_player(player)
+        for player in self.final_players():
+            self.dc.player_widget(player).set_lights(True)
+        if not self.final_players():
+            self.end_game()
+            return
 
         self.buzzer_controller.open_wagers()
     
@@ -685,8 +856,17 @@ class Game(QObject):
             logging.info(f"failed to load image: {question.image_link}")
 
     def wager(self, i_player, amount):
+        if not 0 <= i_player < len(self.players):
+            return
         player = self.players[i_player]
+        if getattr(self, "team_mode", False):
+            if player not in self.final_players() or player.page != "wager" or player.wager is not None:
+                return
+            if not 0 <= amount <= max(player.score, 0):
+                player.waiter.send("PROMPTWAGER", str(max(player.score, 0)))
+                return
         player.wager = amount
+        player.page = "null"
         self.dc.player_widget(player).set_lights(False)
         logging.info(f"{player} wagered {amount}")
         self.check_if_all_wagered()
@@ -696,7 +876,14 @@ class Game(QObject):
         logging.info(f"{player} guessed {guess}")
     
     def check_if_all_wagered(self):
-        if all(p.wager is not None for p in self.players):
+        if getattr(self, "team_mode", False):
+            if not self.final_players():
+                self.end_game()
+                return
+            if getattr(self, "_final_wagers_complete", False):
+                return
+        if all(p.wager is not None for p in self.final_players()):
+            self._final_wagers_complete = True
             self.host_display.question_widget.hint_label.setText(
                 "Press space to show clue!"
             )
@@ -723,13 +910,15 @@ class Game(QObject):
 
         if self.__judgement_round == 0:
             self.dc.load_final_judgement()
-            self.__sorted_players = sorted(self.players, key=lambda x: x.score)
+            self.__sorted_players = sorted(self.final_players(), key=lambda x: x.score)
 
-        elif self.__judgement_round == len(self.players):
+        elif self.__judgement_round == len(self.final_players()):
             self.end_game()
             return
 
         self.answering_player = self.__sorted_players[self.__judgement_round]
+        if getattr(self, "team_mode", False):
+            self.broadcast_teams()
 
         self.dc.player_widget(self.answering_player).set_lights(True)
 
@@ -779,8 +968,11 @@ class Game(QObject):
 
     def end_game(self):
         self._deactivate_final_keystrokes()
-        top_score = max([p.score for p in self.players])
-        winners = [p for p in self.players if p.score == top_score]
+        if getattr(self, "team_mode", False):
+            self.answering_player = None
+            self.broadcast_teams()
+        top_score = max((p.score for p in self.contestants()), default=0)
+        winners = [p for p in self.contestants() if p.score == top_score]
         for w in winners:
             self.dc.player_widget(w).set_lights(True)
 
@@ -801,18 +993,26 @@ class Game(QObject):
         self.keystroke_manager.activate("CLOSE_GAME")
 
     def close_game(self):
+        self.cancel_start_game()
         self._deactivate_transient_keystrokes()
         if self.timer:
             self.timer.cancel()
         self.song_player.stop()
         self.buzzer_controller.restart()
         self.players = []
+        self.reset_teams()
         self.current_round = None
         self.answering_player = None
         self.timer = None
         self.data = None
         self.__judgement_round = 0
+        self.__sorted_players = None
+        self._final_wagers_complete = False
+        self.previous_answerer = []
+        self.active_question = None
+        self.auto_host.player_in_control = None
         self.dc.restart()
+        self.broadcast_teams()
         self.begin()
 
     def _deactivate_final_keystrokes(self):
@@ -822,6 +1022,7 @@ class Game(QObject):
         self.keystroke_manager.deactivate(*self.TRANSIENT_KEYSTROKE_EVENTS)
 
     def get_dd_wager(self, player):
+        player = self.representative(self.scoring_contestant(player))
         self.answering_player = player
         self.soliciting_player = False
 
@@ -873,6 +1074,8 @@ class Game(QObject):
             self.answering_player,
             self.answering_player.score + self.active_question.value,
         )
+        if getattr(self, "team_mode", False) and not self.active_question.dd:
+            self.answering_player.team.representative = self.answering_player
         self.answering_player.stats["correct"] += 1
         self.answering_player.stats["revenue"] += self.active_question.value
         self.set_player_in_control(self.answering_player)
@@ -915,7 +1118,10 @@ class Game(QObject):
 
     def set_score(self, player, score):
         player.score = score
-        self.dc.player_widget(player).update_score()
+        if getattr(self, "team_mode", False):
+            self.broadcast_teams()
+        else:
+            self.dc.player_widget(player).update_score()
 
     def adjust_score(self, player):
         new_score, answered = QInputDialog.getInt(
@@ -939,6 +1145,8 @@ class Player(object):
         self.name = name
         self.display_name = display_name
         self.token = os.urandom(15)
+        self.team = None
+        self.connected = True
         self.score = 0
         self.waiter = waiter
         self.wager = None
@@ -956,6 +1164,40 @@ class Player(object):
             "revenue": 0,
             "losses": 0,
         }
+
+    # Existing scoring and wagering paths transparently use the team's ledger.
+    @property
+    def score(self):
+        return self.team.score if self.team else self._score
+
+    @score.setter
+    def score(self, value):
+        if self.team:
+            self.team.score = value
+        else:
+            self._score = value
+
+    @property
+    def wager(self):
+        return self.team.wager if self.team else self._wager
+
+    @wager.setter
+    def wager(self, value):
+        if self.team:
+            self.team.wager = value
+        else:
+            self._wager = value
+
+    @property
+    def finalanswer(self):
+        return self.team.finalanswer if self.team else self._finalanswer
+
+    @finalanswer.setter
+    def finalanswer(self, value):
+        if self.team:
+            self.team.finalanswer = value
+        else:
+            self._finalanswer = value
 
     def __hash__(self):
         return int.from_bytes(self.token, sys.byteorder)

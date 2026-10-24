@@ -4,6 +4,8 @@ set -euo pipefail
 MODEL="${JPARTY_LOCAL_LLM_MODEL:-qwen2.5:7b}"
 LLM_URL="${JPARTY_LOCAL_LLM_BASE_URL:-http://localhost:11434/v1}"
 OLLAMA_HEALTH_URL="${LLM_URL%/v1}/api/tags"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/local_kev_service.sh"
 
 usage() {
   cat <<EOF
@@ -12,8 +14,9 @@ Set up the beginner local Auto Host LLM path for macOS.
 Usage:
   scripts/setup_local_auto_host_macos.sh
   JPARTY_LOCAL_LLM_MODEL=llama3.2:3b scripts/setup_local_auto_host_macos.sh
+  JPARTY_LOCAL_KEV_ENABLED=0 scripts/setup_local_auto_host_macos.sh
 
-This installs/checks Homebrew, Ollama, and ffmpeg, pulls a local model, and
+This installs/checks Homebrew, Ollama, and ffmpeg (Kev-0.8B is optional), pulls local models, and
 prints the JParty settings to use. It does not edit your JParty config.
 EOF
 }
@@ -71,12 +74,15 @@ fi
 
 echo "Pulling local LLM model: $MODEL"
 ollama pull "$MODEL"
+setup_kev
+start_kev setup
 
 echo
 echo "Local LLM setup is ready."
 echo
 echo "Use these JParty Settings:"
 echo "  Auto Host AI provider: local"
+print_kev_settings
 echo "  Local LLM URL: $LLM_URL"
 echo "  Local LLM model: $MODEL"
 echo
@@ -88,3 +94,4 @@ echo "  Local TTS model: macos-say"
 echo "  Local TTS voice: leave blank for Mac default, or type your Personal Voice name"
 echo
 echo "See AUTOHOST.md for beginner STT/TTS options."
+echo "Stop services with scripts/stop_full_local_auto_host_macos.sh."

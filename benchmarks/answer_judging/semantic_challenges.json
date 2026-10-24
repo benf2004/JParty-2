@@ -1,0 +1,418 @@
+[
+  {
+    "source_index": 10189,
+    "expected": "salt",
+    "response": "sodium chloride",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 20621,
+    "expected": "Mars",
+    "response": "the planet Mars",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 21481,
+    "expected": "the United States",
+    "response": "USA",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 34553,
+    "expected": "DNA",
+    "response": "deoxyribonucleic acid",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 34569,
+    "expected": "Elvis Presley",
+    "response": "Elvis",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 36876,
+    "expected": "the Federal Bureau of Investigation",
+    "response": "FBI",
+    "gold": false,
+    "kind": "context_trap",
+    "reason": "The clue asks what FBI stands for; repeating FBI does not supply the expansion."
+  },
+  {
+    "source_index": 36900,
+    "expected": "World Health Organization",
+    "response": "WHO",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 36931,
+    "expected": "George Washington",
+    "response": "Washington",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 52069,
+    "expected": "water",
+    "response": "H2O",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 58773,
+    "expected": "Carbon Dioxide",
+    "response": "CO2",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 60315,
+    "expected": "Mount Washington",
+    "response": "Mt. Washington",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 81329,
+    "expected": "Soviet Union",
+    "response": "USSR",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 85537,
+    "expected": "Mark Twain",
+    "response": "Samuel Clemens",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 88606,
+    "expected": "Adolf Hitler",
+    "response": "Hitler",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 91227,
+    "expected": "the Beatles",
+    "response": "Beatles",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 91583,
+    "expected": "H2O",
+    "response": "water",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 124716,
+    "expected": "Charles Dickens",
+    "response": "Dickens",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 153783,
+    "expected": "The Rolling Stones",
+    "response": "Rolling Stones",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 154798,
+    "expected": "Jupiter",
+    "response": "the planet Jupiter",
+    "gold": false,
+    "kind": "context_trap",
+    "reason": "This is the Roman counterpart of Zeus, a deity; the planet is a different referent despite sharing its name."
+  },
+  {
+    "source_index": 176539,
+    "expected": "United States",
+    "response": "USA",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 196548,
+    "expected": "Theodore Roosevelt",
+    "response": "Teddy Roosevelt",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "source_index": 198905,
+    "expected": "the Soviet Union",
+    "response": "USSR",
+    "gold": true,
+    "kind": "semantic_alias",
+    "reason": "Equivalent established name, abbreviation, chemical formula, or sufficient surname for the requested referent."
+  },
+  {
+    "clue_id": "1424-0",
+    "expected": "Katarina Witt",
+    "response": "Dorothy Hamill",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3369-0",
+    "expected": "Elvis Presley",
+    "response": "Elvis Costello",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "1230-0",
+    "expected": "North Pole",
+    "response": "South Pole",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3419-0",
+    "expected": "American Pie",
+    "response": "Cherry Pie",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4965-0",
+    "expected": "Meyer Lansky",
+    "response": "Bugsy Siegel",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "5060-0",
+    "expected": "Philip Roth",
+    "response": "Joseph Roth",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3639-0",
+    "expected": "Jackie Chan",
+    "response": "Bruce Lee",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4676-0",
+    "expected": "Max Factor",
+    "response": "Max Planck",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "5832-0",
+    "expected": "Tori Amos",
+    "response": "Tori Kelly",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3182-0",
+    "expected": "Gilbert Stuart",
+    "response": "Stuart Gilbert",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4654-0",
+    "expected": "December 8th",
+    "response": "December 7th",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "5539-0",
+    "expected": "Abigail Adams",
+    "response": "Louisa Adams",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3038-0",
+    "expected": "Lake Victoria",
+    "response": "Lake Tanganyika",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3172-0",
+    "expected": "Marvin Gaye",
+    "response": "Marvin Hamlisch",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3105-0",
+    "expected": "Charles Dickens",
+    "response": "Charles Darwin",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "6187-0",
+    "expected": "World Health Organization",
+    "response": "World Trade Organization",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3883-0",
+    "expected": "Count von Count",
+    "response": "Count Dracula",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3005-0",
+    "expected": "Neil Young",
+    "response": "Neil Diamond",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4237-0",
+    "expected": "Guglielmo Marconi",
+    "response": "Nikola Tesla",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "5186-0",
+    "expected": "Ernie Pyle",
+    "response": "Ernie Banks",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4137-0",
+    "expected": "Charlotte Bronte",
+    "response": "Emily Bronte",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4532-0",
+    "expected": "Dennis Rodman",
+    "response": "Dennis Johnson",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "3312-0",
+    "expected": "Mount Washington",
+    "response": "Mount Jefferson",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "5651-0",
+    "expected": "The Clone Wars",
+    "response": "Attack of the Clones",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "5657-0",
+    "expected": "the World Cup",
+    "response": "the European Championship",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4997-0",
+    "expected": "Healthy Choice",
+    "response": "Lean Cuisine",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4086-0",
+    "expected": "the grand tour",
+    "response": "a Grand Prix",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4722-0",
+    "expected": "the Secretary of Energy Drinks",
+    "response": "the Secretary of Energy",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "970-0",
+    "expected": "St. Vincent de Paul",
+    "response": "Saint Paul",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  },
+  {
+    "clue_id": "4172-0",
+    "expected": "TWA Dome/Edward Jones Dome",
+    "response": "Arrowhead Stadium",
+    "gold": false,
+    "kind": "near_miss",
+    "reason": "Different person, place, date, title, organization, or an incomplete required wordplay phrase; reviewed against the original clue/category."
+  }
+]

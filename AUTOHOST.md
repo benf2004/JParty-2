@@ -56,10 +56,18 @@ Manual host controls remain available. The host can still adjust scores from the
 
 Auto Host settings live in the regular JParty Settings dialog.
 
+Settings are organized into **Game**, **Auto Host**, **Local Services**, and **Images** tabs. Save changes without closing the dialog. Turning Auto Host on/off or changing the theme still restarts JParty.
+
+On macOS, **Local Services** provides **Set up**, **Start services**, **Stop services**, and **Check status**, with live command output. Save your Auto Host settings before setup/start. Setup installs the local tools and downloads models; start uses installed models. If Homebrew is missing, the activity log explains how to install it in Terminal before trying setup again. Custom remote endpoints can be checked, but must be managed externally.
+
+With Auto Host enabled, JParty blocks desktop and phone game starts until the required services are ready. Local checks verify the text-generation model, speech-recognition endpoint, voice endpoint, and the selected answer-judging model (including local judging with cloud generation). Status refreshes automatically, and a fresh check runs after the countdown before the game begins. If a service drops during the countdown, the start is cancelled. Manual-host games do not require AI services. For OpenAI, the readiness check verifies an API key is configured; it does not validate credentials or cloud availability.
+
 Current settings include:
 
 - **Auto Host**: enables or disables the feature.
 - **Auto Host AI provider**: currently `openai` or `local`.
+- **Answer judge**: defaults to the local LLM with fast true/false output (Qwen2.5-7B). It receives the full clue, expected answer, player response, and leniency. It shares the configured local LLM URL/model with text generation. You can also select the Auto Host AI provider or optional Kev. Binary judgments have no model confidence score; the payload reports `null`. Only empty answers and normalized exact matches bypass the model. If judging fails, unmatched answers are rejected with an unavailable reason rather than accepted by fuzzy matching.
+- **Kev URL / served model**: defaults to `http://localhost:8009/v1` and `kev-latest`.
 - **Auto Host leniency**: controls answer-judging strictness.
 - **Auto Host voice**: selects the OpenAI TTS voice.
 - **OpenAI API Key**: optional local-only key field.

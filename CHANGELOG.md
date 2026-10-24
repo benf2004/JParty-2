@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.4.0] - 2026-10-24
+
+- Team mode for up to 32 players across 2–8 teams, with shared scores and team Final Jeopardy.
+- Dedicated Team mode settings tab, roster management, and representative recovery.
+- Optional local Auto Host setup and service controls; no model weights in desktop downloads.
+- Offline phone dependencies, shared start countdowns, and local answer judging improvements.
+- Verified executable releases for Apple Silicon/Intel macOS, Windows x64, and Linux x64.
+
 ## [2.3.0] - Unreleased
 ### Added
 - Auto Host assistant support (Auto Host v1)

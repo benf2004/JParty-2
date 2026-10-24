@@ -32,7 +32,7 @@ def resource_path(relative_path):
         try:
             with open(config_path, 'r') as f:
                 config = json.load(f)
-            _cached_theme = config.get('theme', 'default')
+            _cached_theme = str(config.get('theme', 'default')).lower()
         except Exception:
             _cached_theme = 'default'
 

@@ -1,67 +1,51 @@
-import sys, platform
-sys.path.append('')
+"""Portable desktop bundle. AI services/models are optional first-run downloads."""
+import platform
+import sys
+from pathlib import Path
+
+project = Path(SPECPATH).resolve()
+sys.path.insert(0, str(project))
 from jparty.version import version
 
-uname = platform.uname()
-arch = uname.machine
-iconfile = "resources/icon.icns" if uname.system=="Darwin" else "resources/icon.ico"
+system = platform.system()
+iconfile = str(project / 'resources' / ('icon.icns' if system == 'Darwin' else 'icon.ico'))
+data_files = []
+for asset in (project / 'jparty' / 'data').rglob('*'):
+    if asset.is_file() and asset.suffix.lower() not in {'.pdn', '.psd'} and asset.name != '.DS_Store':
+        data_files.append((str(asset), str(Path('data') / asset.parent.relative_to(project / 'jparty' / 'data'))))
+data_files += [
+    (str(project / 'jparty' / 'buzzer'), 'buzzer'),
+    (str(project / 'jparty' / 'video.html'), 'jparty'),
+    (str(project / 'designer_site'), 'designer_site'),
+    (str(project / 'scripts' / '*.sh'), 'scripts'),
+    (str(project / 'scripts' / 'local_macos_tts_server.py'), 'scripts'),
+    (str(project / 'LICENSE'), 'licenses'),
+    (str(project / 'RELEASE_NOTES.md'), 'docs'),
+    (str(project / 'FULL_LOCAL_AUTOHOST.md'), 'docs'),
+]
 
-a = Analysis(['run.py'],
-             pathex=['.'],
-             binaries=[],
-             datas=[
-                 ("jparty/data/default/*", "data/default"),
-                 ("jparty/data/halloween/*", "data/halloween"),
-                 ("jparty/data/christmas/*", "data/christmas"),
-                 ("jparty/data/eightiessynthwave/*", "data/eightiessynthwave"),
-                 ("jparty/data/birthday/*", "data/birthday"),
-                 ("jparty/data/biblebonkers/*", "data/biblebonkers"),
-                 ("jparty/buzzer", "buzzer"),
-                 ("jparty/video.html", "jparty"),
-                 ("designer_site", "designer_site"),
-                 ("physicalbuzzers/physicalbuzzers.py", "physicalbuzzers"),
-                 ("physicalbuzzers/__init__.py", "physicalbuzzers"),
-             ],
-             hiddenimports=['PyQt6.QtWebEngineCore', 'PyQt6.QtMultimedia', 'PyQt6.QtMultimediaWidgets'],
-             hookspath=[],
-             runtime_hooks=[],
-             excludes=[],
-             win_no_prefer_redirects=False,
-             win_private_assemblies=False,
-             cipher=None,
-             noarchive=False)
-
-pyz = PYZ(a.pure, a.zipped_data,
-             cipher=None)
-
-exe = EXE(pyz,
-          a.scripts,
-          [],
-          exclude_binaries=True,
-          name='JParty',
-          debug=False,
-          bootloader_ignore_signals=False,
-          target_arch=arch,
-          strip=False,
-          upx=True,
-          upx_exclude=[],
-          runtime_tmpdir=None,
-          console=False , icon=iconfile)
-
-coll = COLLECT(exe,
-               a.binaries,
-               a.zipfiles,
-               a.datas,
-               strip=False,
-               upx=True,
-               upx_exclude=[],
-               name='JParty')
-
-if uname.system == "Darwin":
-    app = BUNDLE(coll,
-                 name='JParty.app',
-                 version=version,
-                 icon=iconfile,
-                 bundle_identifier='us.stuartthomas.jparty')
-
-print(f"Built for {uname.system} with architecture {arch}")
+a = Analysis(
+    [str(project / 'run.py')], pathex=[str(project)], binaries=[], datas=data_files,
+    hiddenimports=['PyQt6.QtWebEngineCore', 'PyQt6.QtWebEngineWidgets',
+                   'PyQt6.QtMultimedia', 'PyQt6.QtMultimediaWidgets',
+                   'physicalbuzzers.physicalbuzzers'],
+    hookspath=[], runtime_hooks=[],
+    excludes=['tkinter', 'PyQt5', 'PySide2', 'PySide6'], noarchive=False,
+)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz, a.scripts, [], exclude_binaries=True, name='JParty', debug=False,
+    bootloader_ignore_signals=False, strip=False, upx=False,
+    console=False, icon=iconfile,
+)
+coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='JParty')
+if system == 'Darwin':
+    app = BUNDLE(
+        coll, name='JParty.app', version=version, icon=iconfile,
+        bundle_identifier='us.stuartthomas.jparty',
+        info_plist={
+            'NSHighResolutionCapable': True,
+            'NSMicrophoneUsageDescription': 'JParty uses microphone audio for optional Auto Host responses.',
+            'LSMinimumSystemVersion': '11.0',
+        },
+    )

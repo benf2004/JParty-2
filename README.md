@@ -98,7 +98,7 @@ Mac builds in GitHub Actions require these repository Actions secrets:
 
 | Secret | Value |
 | --- | --- |
-| `BUILD_CERTIFICATE_BASE64` | Base64-encoded `.p12` containing one valid **Developer ID Application** certificate and its private key |
+| `BUILD_CERTIFICATE_BASE64` | Base64-encoded `.p12` containing the private key paired with the public Developer ID release certificate in `resources/signing/` |
 | `P12_PASSWORD` | Password used when exporting the `.p12` |
 | `KEYCHAIN_PASSWORD` | Separate random password for the temporary build keychain |
 | `APPLE_ID` | Apple account email used for notarization |
@@ -106,6 +106,8 @@ Mac builds in GitHub Actions require these repository Actions secrets:
 | `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password generated at account.apple.com; do not use your normal Apple password |
 
 The workflow imports the identity into a temporary keychain, validates Apple credentials, signs the bundled binaries with hardened runtime, submits the app using `notarytool`, staples the accepted ticket, and verifies Gatekeeper acceptance before creating the final ZIP and checksum. It removes the temporary keychain even if the build fails. Mac releases fail if any credential or verification is missing; local builds without signing settings remain ad-hoc signed for development.
+
+The public certificate and Apple intermediate certificates live in `resources/signing/`. The workflow pairs the public release certificate with the private key from the `.p12`, so the encrypted secret does not need to be replaced when a certificate is issued for the same key. Replace the leaf certificate before its February 1, 2027 expiration. For forks without public certificates, the `.p12` must contain exactly one valid Developer ID Application identity.
 
 Keep the original signing identity in macOS Keychain, with a password-protected `.p12` backup in an encrypted vault. Certificate passwords and private keys must never be committed. GitHub secrets hold the CI copy; Base64 itself is not encryption. See [GitHub's certificate setup](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications) and [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 

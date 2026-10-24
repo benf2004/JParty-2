@@ -1,6 +1,7 @@
 """Release signing must fail closed and keep credentials out of diagnostics."""
 import base64
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,28 @@ class MacSigningTests(unittest.TestCase):
     def test_refuses_ambiguous_signing_identity(self):
         with self.assertRaises(RuntimeError):
             signing.developer_identity('\n'.join(f'1) {c * 40} "Developer ID Application: Test"' for c in 'AB'))
+
+    def test_selects_only_the_intended_public_release_certificate(self):
+        output = '\n'.join(f'1) {c * 40} "Developer ID Application: Test"' for c in 'AB')
+        self.assertEqual(signing.developer_identity(output, 'b' * 40), 'B' * 40)
+        with self.assertRaisesRegex(RuntimeError, 'matching'):
+            signing.developer_identity(output, 'C' * 40)
+
+    def test_pairs_public_leaf_with_existing_private_key_without_reimporting_duplicates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            certificates = Path(directory)
+            leaf = b'public-leaf-certificate'
+            intermediate = b'public-intermediate-certificate'
+            (certificates / 'developer-id-application.cer').write_bytes(leaf)
+            (certificates / 'DeveloperIDCA.cer').write_bytes(intermediate)
+            existing = '-----BEGIN CERTIFICATE-----\n' + base64.b64encode(leaf).decode() + '\n-----END CERTIFICATE-----'
+            with patch.object(signing, 'PUBLIC_CERTIFICATES', certificates), \
+                    patch.object(signing, 'command', side_effect=[existing, '']) as command:
+                fingerprint = signing.import_public_certificates('/temporary/keychain')
+            self.assertEqual(fingerprint, hashlib.sha1(leaf).hexdigest().upper())
+            imported = command.call_args_list[1].args[0]
+            self.assertEqual(imported[:2], ['security', 'add-certificates'])
+            self.assertEqual(imported[-1].name, 'DeveloperIDCA.cer')
 
     def test_identity_diagnostics_show_type_without_personal_details(self):
         output = '1) ' + 'A' * 40 + ' "3rd Party Mac Developer Application: Private Name (PRIVATE123)" (CSSMERR_TP_CERT_EXPIRED)'

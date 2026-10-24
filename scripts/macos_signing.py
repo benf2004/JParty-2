@@ -3,6 +3,7 @@
 import argparse
 import base64
 import binascii
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ import sys
 import tempfile
 
 PROFILE = 'jparty-notary'
+PUBLIC_CERTIFICATES = Path(__file__).resolve().parents[1] / 'resources' / 'signing'
 SECRETS = ('BUILD_CERTIFICATE_BASE64', 'P12_PASSWORD', 'KEYCHAIN_PASSWORD',
            'APPLE_ID', 'APPLE_TEAM_ID', 'APPLE_APP_SPECIFIC_PASSWORD')
 
@@ -32,12 +34,33 @@ def signing_directory():
     return Path(os.environ['RUNNER_TEMP']) / 'jparty-signing'
 
 
-def developer_identity(output):
+def developer_identity(output, expected_fingerprint=None):
     identities = re.findall(r'\b([A-Fa-f0-9]{40}) "Developer ID Application: [^"\n]+"', output)
+    if expected_fingerprint:
+        if expected_fingerprint.upper() not in [value.upper() for value in identities]:
+            raise RuntimeError('The .p12 must contain the private key matching the public Developer ID '
+                               'release certificate, and that certificate must be valid.')
+        return expected_fingerprint.upper()
     if len(identities) != 1:
         raise RuntimeError('The .p12 must contain exactly one valid Developer ID Application certificate '
                            'with its private key. Apple Development and Apple Distribution certificates do not work here.')
     return identities[0]
+
+
+def import_public_certificates(keychain):
+    leaf = PUBLIC_CERTIFICATES / 'developer-id-application.cer'
+    if not leaf.exists():
+        return None
+    # The .p12 secret supplies the private key. Public certificates can be
+    # renewed separately and paired with that key without exporting it again.
+    existing = command(['security', 'find-certificate', '-a', '-p', keychain], 'Read public certificates in build keychain')
+    installed = {hashlib.sha256(base64.b64decode(pem)).digest() for pem in
+                 re.findall(r'-----BEGIN CERTIFICATE-----\s*(.*?)\s*-----END CERTIFICATE-----', existing, re.S)}
+    for certificate in sorted(PUBLIC_CERTIFICATES.glob('*.cer')):
+        if hashlib.sha256(certificate.read_bytes()).digest() not in installed:
+            command(['security', 'add-certificates', '-k', keychain, certificate], 'Import public Developer ID certificate chain')
+    # macOS identifies signing identities using the certificate's SHA-1 fingerprint.
+    return hashlib.sha1(leaf.read_bytes()).hexdigest().upper()
 
 
 def identity_diagnostics(output):
@@ -79,6 +102,7 @@ def install():
                 'Import .p12 certificate (P12_PASSWORD must match its export password)')
     finally:
         certificate_path.unlink(missing_ok=True)
+    expected_fingerprint = import_public_certificates(keychain)
     command(['security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:',
              '-k', password, keychain], 'Allow codesign access to the private key')
     command(['security', 'list-keychains', '-d', 'user', '-s', keychain, *keychains],
@@ -86,7 +110,7 @@ def install():
     identities = command(['security', 'find-identity', '-v', '-p', 'codesigning', keychain],
                          'Find Developer ID Application identity')
     try:
-        identity = developer_identity(identities)
+        identity = developer_identity(identities, expected_fingerprint)
     except RuntimeError:
         diagnostic = command(['security', 'find-identity', '-p', 'codesigning', keychain],
                              'Inspect signing identity types')

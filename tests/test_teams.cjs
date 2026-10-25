@@ -54,10 +54,11 @@ test('team updates show shared score, representative and lobby team selection', 
     const c = client();
     c.receive('TEAM_STATE', state);
     assert.equal(c.$('#team-banner').visible, true);
-    assert.match(c.$('#team-summary').content, /Red.*1,200.*Ada.*you/);
+    assert.match(c.$('#team-summary').content, /Red.*1,200/);
+    assert.equal(c.$('#team-role').content, 'Team rep');
     assert.equal(c.$('#lobby-team').value, 'team-1');
     assert.equal(c.$('#lobby-team-section').visible, true);
-    assert.equal(c.$('#join-team').children.length, 3);
+    assert.equal(c.$('#join-team').children.length, 4);
     c.context.changeTeam('team-2');
     assert.equal(c.sent.at(-1).message, 'CHANGE_TEAM');
     assert.equal(c.sent.at(-1).text, 'team-2');
@@ -117,4 +118,30 @@ test('a returning phone requests its saved player state', () => {
     c.boot();
     assert.equal(c.sent.at(-1).message, 'CHECK_IF_EXISTS');
     assert.equal(c.sent.at(-1).text, 'existing-token');
+});
+
+test('creating a team sends both typed and drawn team identity with individual registration', () => {
+    const c = client();
+    c.receive('TEAM_STATE', {...state, joined: false, team_id: null, teams: []});
+    c.$('#join-team').val('__new__');
+    c.$('#new-team-name').val('Red Rockets');
+    c.context.teamSignaturePad = {isEmpty() {return false;}, toDataURL() {return 'team drawing';}};
+    c.context.nameForm('individual drawing', 'Phone Only', 'Ada');
+    assert.equal(c.sent.at(-1).text, 'individual drawing');
+    assert.equal(c.sent.at(-1).displayName, 'Ada');
+    assert.equal(c.sent.at(-1).team_id, null);
+    assert.equal(c.sent.at(-1).new_team.name, 'Red Rockets');
+    assert.equal(c.sent.at(-1).new_team.signature, 'team drawing');
+});
+
+test('creating a team requires a typed name and drawing, and stops at eight teams', () => {
+    const c = client();
+    c.receive('TEAM_STATE', {...state, joined: false, team_id: null});
+    c.$('#join-team').val('__new__');
+    c.$('#new-team-name').val('Red Rockets');
+    c.context.nameForm('individual drawing', 'Phone Only', 'Ada');
+    assert.equal(c.sent.length, 0);
+    assert.match(c.$('#team-error').content, /Type and draw/);
+    c.receive('TEAM_STATE', {...state, teams: Array.from({length: 8}, (_, i) => ({id: 't'+i, name: 'Team '+i, members: 1}))});
+    assert.equal(c.$('#join-team').children.some(option => option.value === '__new__'), false);
 });

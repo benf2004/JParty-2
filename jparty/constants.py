@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
   'allownegativeinfinal': 'True',
   'use_wayback_first': True,
   'mute_sound': False,
+  'team_mode': False,
   'image_fallback': {
     'use_pexels': False,
     'pexels_api_key': '',

@@ -138,3 +138,46 @@ class TeamSocketTests(AsyncHTTPTestCase):
         self.game.transfer_representative(self.game.players[1])
         await self.read_until(ben, 'PROMPT_SELECT_CLUE')
         self.assertEqual(self.game.players[0].page, 'buzz')
+
+    @gen_test
+    async def test_phone_creates_team_atomically_and_waiting_phones_can_join_it(self):
+        self.game.configure_teams(True)
+        waiting = await self.connect()
+        creator = await self.connect()
+        creator.write_message(json.dumps({'message': 'NAME', 'text': 'Ada signature',
+            'displayName': 'Ada', 'buzzerColor': 'Phone Only',
+            'new_team': {'name': 'BUZZ Rockets', 'signature': test_teams.team_drawing()}}))
+        token = await self.read_until(creator, 'TOKEN')
+        state = json.loads(await self.read_until(creator, 'TEAM_STATE'))
+        available = json.loads(await self.read_until(waiting, 'TEAM_STATE'))
+        self.assertEqual(available['teams'][0]['name'], 'BUZZ Rockets')
+        self.assertTrue(state['is_representative'])
+        teammate, _, teammate_state = await self.join('Ben', state['team_id'])
+        self.assertEqual(teammate_state['team_name'], 'BUZZ Rockets')
+        self.assertEqual(len(self.game.players), 2)
+        self.assertEqual(self.game.players[0].name, 'Ada signature')
+        self.assertEqual(self.game.teams[0].signature, test_teams.team_drawing())
+        creator.close()
+        returning = await self.connect()
+        returning.write_message(json.dumps({'message': 'CHECK_IF_EXISTS', 'text': token}))
+        restored = json.loads(await self.read_until(returning, 'EXISTS'))
+        self.assertEqual(restored['team_id'], state['team_id'])
+        self.assertTrue(restored['is_representative'])
+
+    @gen_test
+    async def test_two_creators_with_same_name_get_one_team_and_can_retry_as_teammates(self):
+        self.game.configure_teams(True)
+        first, second = await self.connect(), await self.connect()
+        for client, name in [(first, 'Ada'), (second, 'Ben')]:
+            client.write_message(json.dumps({'message': 'NAME', 'text': name, 'displayName': name,
+                'new_team': {'name': 'Same Team', 'signature': test_teams.team_drawing()}}))
+        await self.read_until(first, 'TOKEN')
+        error = await self.read_until(second, 'TEAM_ERROR')
+        self.assertIn('already exists', error)
+        self.assertEqual(len(self.game.teams), 1)
+        self.assertEqual(len(self.game.players), 1)
+        second.write_message(json.dumps({'message': 'NAME', 'text': 'Ben', 'displayName': 'Ben',
+                                        'team_id': self.game.teams[0].id}))
+        await self.read_until(second, 'TOKEN')
+        self.assertEqual(len(self.game.players), 2)
+        self.assertIs(self.game.players[0].team, self.game.players[1].team)

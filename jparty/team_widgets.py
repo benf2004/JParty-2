@@ -2,8 +2,8 @@
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (
-    QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QDialog, QFrame, QHBoxLayout, QLabel,
+    QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 from jparty.teams import member_name
 
@@ -102,176 +102,94 @@ class TeamSettingsPanel(QWidget):
         self.game = game
         self.setObjectName('TeamSettingsPanel')
         self.setStyleSheet(TEAM_STYLE)
-        self._saved = self.current_settings()
+        self._saved = bool(game and game.team_mode)
         body = QVBoxLayout(self)
         body.setContentsMargins(22, 22, 22, 22)
         body.setSpacing(18)
-
-        hero, hero_layout = card('teamHero')
-        hero_layout.setContentsMargins(24, 20, 24, 22)
-        hero_layout.setSpacing(8)
-        hero_layout.addWidget(label('PLAY TOGETHER', 'heroEyebrow'))
-        hero_layout.addWidget(label('Team mode', 'heroTitle'))
-        hero_layout.addWidget(label('Everyone gets a buzzer. Your team shares the score.', 'heroDescription'))
+        hero, layout = card('teamHero')
+        layout.addWidget(label('PLAY TOGETHER', 'heroEyebrow'))
+        layout.addWidget(label('Team mode', 'heroTitle'))
+        layout.addWidget(label('Everyone gets a buzzer. Your team shares the score.', 'heroDescription'))
         chips = QHBoxLayout()
-        chips.setSpacing(8)
-        for text in ['2–8 teams', 'Up to 32 players', 'Individual phones']:
-            chip = label(text, 'heroChip')
-            chips.addWidget(chip)
+        for text in ['Made on phones', 'Up to 32 players', 'Individual phones']:
+            chips.addWidget(label(text, 'heroChip'))
         chips.addStretch()
-        hero_layout.addLayout(chips)
+        layout.addLayout(chips)
         body.addWidget(hero)
 
-        mode, mode_layout = card()
+        mode, layout = card()
         row = QHBoxLayout()
         copy = QVBoxLayout()
-        copy.setSpacing(5)
         copy.addWidget(label('Play as teams', 'sectionTitle'))
-        copy.addWidget(label('Turn on shared scoring and let players choose a team on their phones.', 'teamMuted'))
+        copy.addWidget(label('Players choose a team or create their own when they join.', 'teamMuted'))
         row.addLayout(copy, 1)
         self.mode_status = label('', 'teamStatus')
         row.addWidget(self.mode_status)
         self.enabled = TeamToggle()
         self.enabled.setFixedSize(self.enabled.sizeHint())
         self.enabled.setAccessibleName('Enable team mode')
-        self.enabled.setChecked(self._saved[0])
+        self.enabled.setChecked(self._saved)
         row.addWidget(self.enabled)
-        mode_layout.addLayout(row)
+        layout.addLayout(row)
         self.lock_notice = label('', 'teamMuted')
-        mode_layout.addWidget(self.lock_notice)
+        layout.addWidget(self.lock_notice)
         body.addWidget(mode)
 
-        self.editor, editor_layout = card()
-        header = QHBoxLayout()
-        titles = QVBoxLayout()
-        titles.setSpacing(5)
-        titles.addWidget(label('Make it your team', 'sectionTitle'))
-        titles.addWidget(label('Choose how many teams will play, then give each one a name.', 'teamMuted'))
-        header.addLayout(titles, 1)
-        self.minus = QPushButton('−')
-        self.plus = QPushButton('+')
-        for button, name in [(self.minus, 'Remove a team'), (self.plus, 'Add a team')]:
-            button.setObjectName('teamStep')
-            button.setAccessibleName(name)
-            button.setFixedSize(34, 34)
-        self.count = QSpinBox()
-        self.count.setRange(2, 8)
-        self.count.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-        self.count.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.count.setFixedWidth(44)
-        self.count.setAccessibleName('Number of teams')
-        self.count.setValue(len(self._saved[1]))
-        self.minus.clicked.connect(self.count.stepDown)
-        self.plus.clicked.connect(self.count.stepUp)
-        header.addWidget(self.minus)
-        header.addWidget(self.count)
-        header.addWidget(self.plus)
-        editor_layout.addLayout(header)
-        self.grid = QGridLayout()
-        self.grid.setHorizontalSpacing(18)
-        self.grid.setVerticalSpacing(14)
-        self.names, self.team_rows = [], []
-        for i in range(8):
-            field = QWidget()
-            field_layout = QHBoxLayout(field)
-            field_layout.setContentsMargins(0, 0, 0, 0)
-            badge = label(f'{i+1:02}')
-            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            badge.setFixedSize(34, 36)
-            badge.setStyleSheet(f'background: {TEAM_TINTS[i]}; color: {TEAM_COLORS[i]}; border-radius: 8px; font-weight: 700; font-size: 12px;')
-            field_layout.addWidget(badge)
-            name = QLineEdit(self._saved[1][i] if i < len(self._saved[1]) else f'Team {i+1}')
-            name.setMaxLength(40)
-            name.setAccessibleName(f'Team {i+1} name')
-            name.setPlaceholderText(f'Team {i+1}')
-            field_layout.addWidget(name, 1)
-            self.grid.addWidget(field, i // 2, i % 2)
-            self.names.append(name)
-            self.team_rows.append(field)
-        self.grid.setColumnStretch(0, 1)
-        self.grid.setColumnStretch(1, 1)
-        editor_layout.addLayout(self.grid)
-        body.addWidget(self.editor)
+        flow, layout = card()
+        layout.addWidget(label('Made by your players', 'sectionTitle'))
+        layout.addWidget(label('1. Everyone types their own name and signs in on their phone.\n'
+                               '2. A team’s first player types and draws its name. Teammates choose it from the list.\n'
+                               '3. When someone buzzes, their own signature appears below the team name.', 'teamMuted'))
+        layout.addWidget(label('2–8 teams can play. At least two teams need players before starting.', 'teamMuted'))
+        body.addWidget(flow)
 
-        roster, roster_layout = card()
-        roster_row = QHBoxLayout()
-        roster_copy = QVBoxLayout()
-        roster_copy.setSpacing(5)
-        roster_copy.addWidget(label('Your players', 'sectionTitle'))
+        roster, layout = card()
+        row = QHBoxLayout()
+        copy = QVBoxLayout()
+        copy.addWidget(label('Your players', 'sectionTitle'))
         self.roster_summary = label('', 'teamMuted')
-        roster_copy.addWidget(self.roster_summary)
-        roster_row.addLayout(roster_copy, 1)
+        copy.addWidget(self.roster_summary)
+        row.addLayout(copy, 1)
         self.roster_button = QPushButton('Manage players  →')
         self.roster_button.setObjectName('teamAction')
         self.roster_button.clicked.connect(self.show_roster)
-        roster_row.addWidget(self.roster_button)
-        roster_layout.addLayout(roster_row)
-        self.roster_hint = label('Players join from the game’s QR code and choose their team before play begins.', 'teamMuted')
-        roster_layout.addWidget(self.roster_hint)
+        row.addWidget(self.roster_button)
+        layout.addLayout(row)
+        layout.addWidget(label('Manage members and recover team controls here. Team names are created on phones.', 'teamMuted'))
         body.addWidget(roster)
-
-        rules = label('HOW IT PLAYS\nOne attempt per team, per clue. The last teammate to answer correctly acts for the team. One team wager and answer in Final Jeopardy.', 'teamMuted')
-        rules.setContentsMargins(4, 0, 4, 0)
-        body.addWidget(rules)
         body.addStretch()
         self.enabled.toggled.connect(self.refresh_controls)
-        self.count.valueChanged.connect(self.refresh_controls)
         if game:
             game.teams_changed.connect(self.refresh_controls)
         self.refresh_controls()
 
-    def current_settings(self):
-        if self.game:
-            return self.game.team_mode, [t.name for t in self.game.teams]
-        return False, ['Team 1', 'Team 2']
-
-    def draft(self):
-        return self.enabled.isChecked(), [n.text().strip() for n in self.names[:self.count.value()]]
-
     def validation_error(self):
-        if self.draft() == self.current_settings():
+        if self.enabled.isChecked() == self._saved:
             return ''
         if not self.game or self.game.current_round is not None:
-            return 'Team setup is locked during play. Return to the lobby to make changes.'
-        enabled, names = self.draft()
-        if any(not name for name in names):
-            return 'Give every team a name before saving.'
-        if len(set(names)) != len(names):
-            return 'Use a different name for each team.'
-        if not enabled and len(self.game.players) > 8:
-            return 'Individual mode supports eight players. Remove players before turning team mode off.'
+            return 'Team mode is locked during play. Return to the lobby to change it.'
         return ''
 
     def apply(self):
         if self.validation_error():
             return False
-        draft = self.draft()
-        if self.game and draft != self.current_settings():
-            if not self.game.configure_teams(*draft):
+        if self.game and self.enabled.isChecked() != self.game.team_mode:
+            if not self.game.configure_teams(self.enabled.isChecked()):
                 return False
-        self._saved = self.current_settings()
+        self._saved = self.enabled.isChecked()
         self.refresh_controls()
         return True
 
     def refresh_controls(self):
         available = self.game is not None and self.game.current_round is None
         self.enabled.setEnabled(available)
-        on = self.enabled.isChecked()
-        self.mode_status.setText('Enabled' if on else 'Off')
-        self.count.setEnabled(available and on)
-        self.minus.setEnabled(available and on and self.count.value() > 2)
-        self.plus.setEnabled(available and on and self.count.value() < 8)
-        for i, (field, name) in enumerate(zip(self.team_rows, self.names)):
-            field.setVisible(i < self.count.value())
-            name.setEnabled(available and on)
+        self.mode_status.setText('Enabled' if self.enabled.isChecked() else 'Off')
         self.roster_button.setEnabled(self.game is not None)
         players = len(self.game.players) if self.game else 0
-        occupied = len(self.game.contestants()) if self.game and self.game.team_mode else 0
-        self.roster_summary.setText(f'{players} {"player" if players == 1 else "players"} joined' +
-                                    (f' · {occupied} teams with members' if occupied else ' · Ready when you are'))
-        self.lock_notice.setText('Changes apply when you save. At least two teams need players to start.'
-                                 if available else 'Team setup is locked during play. You can still manage your players.'
-                                 if self.game else 'Open a game lobby to set up teams.')
+        teams = len(self.game.contestants()) if self.game and self.game.team_mode else 0
+        self.roster_summary.setText(f'{players} players joined · {teams} teams with members')
+        self.lock_notice.setText('Saving a mode change restarts JParty. Players will need to join again.'
+                                 if available else 'Team mode is locked during play. You can still manage your players.')
 
     def show_roster(self):
         if self.game:

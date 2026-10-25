@@ -47,9 +47,13 @@ The host sees the answer on the laptop screen and can adjudicate with the arrow 
 
 ## Team mode
 
-Open **Settings → Team mode** on the host's welcome screen. Turn on team play, name 2–8 teams, and choose **Save changes**. Players join on their own phones and choose a team; they can switch teams until the game starts. At least two teams must have members.
+Open **Settings → Team mode** on the host's welcome screen, turn on team play, and choose **Save changes**. Changing the mode restarts JParty and saves the choice for the next launch. Players join again after the restart. The host does not create or name teams.
+
+Everyone types their individual name and signs in on their phone. They can choose an existing team or choose **Create a new team**, type its name, and draw its name on a separate signature pad. The creator is also registered as an individual player. New teams appear immediately on other phones. Up to eight teams can be created; at least two must have players before starting. Players can switch teams in the lobby.
 
 Each team shares a score and gets one attempt per clue. Anyone can buzz. The first member to join acts for the team initially; a correct regular-clue answer makes that member the team's representative. The representative picks clues, handles Daily Doubles, and submits the team's single Final Jeopardy wager and answer. Auto Host review and Play Again votes still count per person.
+
+The podium keeps the team's typed name, drawn name, and shared score visible. The answering player's own name and signature appear beneath it until the answer ends. This keeps the team identity stable and makes it clear who buzzed.
 
 Use **Manage players** in the Team mode tab, or the **…** button on a team podium, to manage members and recover representative controls if someone disconnects. Finish an active answer or Final Jeopardy review before removing its participants. Returning to the lobby clears game state while keeping the mode and team names.
 

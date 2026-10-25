@@ -21,12 +21,14 @@
   <body>
   <div id="team-banner" style="display:none" role="status" aria-live="polite">
     <span id="team-summary"></span>
-    <div id="lobby-team-section" style="display:none">
+    <span id="team-role"></span>
+    <details id="lobby-team-section" style="display:none">
+      <summary>Change team</summary>
       <label for="lobby-team">Your team</label>
       <select id="lobby-team" onchange="changeTeam(this.value)"></select>
-    </div>
-    <div id="team-error" role="alert"></div>
+    </details>
   </div>
+  <div id="team-error" role="alert"></div>
 
   <div class="w3-container buzz-page noselect" style="margin-top:90px">
       <button id="buzzer" class="jparty-button" onmousedown="buzz()">BUZZ!</button>
@@ -58,13 +60,22 @@
         Type your name and sign below
       </div>
       <div id="display-name-section">
-        <input type='text' name="displayname" class="text_input display_name_input" placeholder="Your name"/>
+        <input type='text' name="displayname" class="text_input display_name_input" placeholder="Your name" maxlength="40" autocomplete="given-name"/>
       </div>
       <div id="join-team-section" style="display:none">
         <label for="join-team">Choose your team</label>
-        <select id="join-team"></select>
+        <select id="join-team" onchange="updateTeamCreation()"></select>
+        <div id="create-team-section" style="display:none">
+          <label for="new-team-name">Team name</label>
+          <input id="new-team-name" class="text_input" maxlength="40" placeholder="Give your team a name" autocomplete="off"/>
+          <label for="team-name-canvas">Draw your team name</label>
+          <canvas id="team-name-canvas" aria-label="Team name signature"></canvas>
+          <button type="button" id="clear-team-signature" class="jparty-button canvas-button">Clear team drawing</button>
+          <p class="team-creation-hint">Your team will appear for everyone when you tap Play.</p>
+        </div>
       </div>
-      <canvas id="name-canvas"></canvas>
+      <label class="signature-label" for="name-canvas">Your signature</label>
+      <canvas id="name-canvas" aria-label="Your individual name signature"></canvas>
 
       <div class="canvas-buttons">
         <button type="button" class="jparty-button canvas-button" id="clear-button">Clear</button>

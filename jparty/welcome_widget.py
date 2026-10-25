@@ -1291,6 +1291,9 @@ class SettingsMenu(QDialog):
             self.tabs.setCurrentIndex(self.team_tab_index)
             return
         requires_restart = False
+        team_mode = self.team_panel.enabled.isChecked()
+        if team_mode != self.team_panel._saved:
+            requires_restart = True
 
         with open(config_path, 'r') as f:
             config = json.load(f)
@@ -1332,8 +1335,8 @@ class SettingsMenu(QDialog):
 
         # Save config
         logging.info("Saving settings...")
-        with open(config_path, 'w') as f:
-            json.dump({
+        config.update({
+                'team_mode': team_mode,
                 'theme': theme,
                 'showtextwithimages': showtextwithimages,
                 'earlybuzztimeout': earlybuzztimeout,
@@ -1343,11 +1346,14 @@ class SettingsMenu(QDialog):
                 'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
                 'image_fallback': image_fallback,
                 'auto_host': auto_host,
-            }, f)
+            })
+        with open(config_path, 'w') as f:
+            json.dump(config, f)
 
         try:
             self.parent().game.config = config
             self.parent().game.config.update({
+                'team_mode': team_mode,
                 'theme': theme,
                 'showtextwithimages': showtextwithimages,
                 'earlybuzztimeout': earlybuzztimeout,
@@ -1367,7 +1373,8 @@ class SettingsMenu(QDialog):
         if requires_restart:
             # Restart the application
             # Use sys.executable as both the path and the first argument
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            arguments = sys.argv[1:] if getattr(sys, 'frozen', False) else sys.argv
+            os.execv(sys.executable, [sys.executable] + arguments)
         self._saved_auto_host = auto_host.copy()
         self.service_manager.configure(auto_host)
         self.settings_feedback.setText("Settings saved.")

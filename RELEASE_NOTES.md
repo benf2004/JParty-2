@@ -1,4 +1,4 @@
-# JParty 2.4.1
+# JParty 2.4.2
 
 One desktop app, with optional local AI Auto Host. No AI models are included in these downloads.
 
@@ -13,12 +13,14 @@ The macOS apps are signed with an Apple Developer ID, notarized by Apple, and in
 
 ## What changed
 
-- Mac releases now use Developer ID signing, hardened runtime, Apple notarization, and Gatekeeper verification.
-- Team mode supports 2–8 teams and up to 32 individual phone buzzers, shared scores, team lockouts, and one Final Jeopardy entry per team.
-- Team setup has its own redesigned Settings tab, with a team editor and roster recovery controls.
-- Phone dependencies ship with the app rather than requiring public CDNs.
-- Local Auto Host includes service status, setup/start/stop controls, local answer judging, and shared start countdowns.
-- Local media playback and score/statistics views support the updated game flow.
+- Players create or join teams on their phones. Team creators type and draw their team name separately from their individual name and signature; hosts no longer need to set up teams.
+- Saving a team-mode change in Settings restarts JParty and remembers the selected mode. Players join again after the restart.
+- Team podiums show the team's shared score and drawn name, with the answering person's own name and signature underneath.
+- The phone team/score strip is more compact, and lobby team changes expand only when needed. The iOS client's embedded browser also has a compact toolbar with a Game options menu.
+- Team creation validates names and drawings, handles simultaneous duplicate names, cancels pending start countdowns when rosters change, and respects the eight-team and 32-player limits.
+- Registration now correctly handles team names containing “BUZZ”.
+
+The updated iOS Xcode project is included in the repository and source archives. This release's executable downloads are the four desktop builds listed above; there is no installable iOS app attached.
 
 ## Optional local AI Auto Host
 

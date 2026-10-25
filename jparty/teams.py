@@ -1,6 +1,9 @@
 """Team state and game integration; participants remain individual connections."""
 from dataclasses import dataclass, field
+import base64
 import json
+import struct
+import uuid
 from jparty.constants import MAXPLAYERS, MAXTEAMPLAYERS
 
 
@@ -14,6 +17,7 @@ class Team:
     wager: object = None
     finalanswer: str = ""
     final_eligible: bool = True
+    signature: str = ""
 
 
 def member_name(player):
@@ -26,8 +30,8 @@ class TeamMode:
     """Methods run on the Qt game thread, including queued socket roster actions."""
 
     def init_teams(self):
-        self.team_mode = False
-        self.teams = [Team("team-1", "Team 1"), Team("team-2", "Team 2")]
+        self.team_mode = bool(getattr(self, 'config', {}).get('team_mode', False))
+        self.teams = []
         self.roster_version = 0
 
     def scoring_contestant(self, player):
@@ -66,6 +70,7 @@ class TeamMode:
             "is_representative": bool(team and team.representative is player),
             "score": player.score if player else 0,
             "in_lobby": self.current_round is None,
+            "can_create_team": self.current_round is None and len(self.teams) < 8,
         }
 
     def broadcast_teams(self):
@@ -88,8 +93,17 @@ class TeamMode:
         if getattr(self, "host_display", None):
             self.host_display.welcome_widget.check_start()
 
-    def configure_teams(self, enabled, names):
-        if self.current_round is not None or not 2 <= len(names) <= 8:
+    def configure_teams(self, enabled, names=None):
+        if self.current_round is not None:
+            return False
+        if names is None:
+            for player in self.players:
+                player.team = None
+            self.teams = []
+            self.team_mode = bool(enabled)
+            self.roster_changed()
+            return True
+        if not 2 <= len(names) <= 8:
             return False
         names = [str(name).strip()[:40] for name in names]
         if any(not name for name in names) or len(set(names)) != len(names):
@@ -113,6 +127,36 @@ class TeamMode:
         self.roster_changed()
         return True
 
+    def make_team(self, details):
+        """Validate a proposed team without changing the roster until join succeeds."""
+        if not self.team_mode or self.current_round is not None:
+            raise ValueError('Teams can only be created in the lobby.')
+        if len(self.teams) >= 8:
+            raise ValueError('Eight teams have already been created. Choose an existing team.')
+        if not isinstance(details, dict):
+            raise ValueError('Type and draw a team name before creating your team.')
+        name, signature = details.get('name'), details.get('signature')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 40:
+            raise ValueError('Enter a team name between 1 and 40 characters.')
+        name = name.strip()
+        if any(t.name.casefold() == name.casefold() for t in self.teams):
+            raise ValueError('That team already exists. Choose it from the list or use a different name.')
+        if not isinstance(signature, str) or not signature.startswith('data:image/png;base64,') or len(signature) > 350000:
+            raise ValueError('Draw your team name before creating your team.')
+        try:
+            image = base64.b64decode(signature[22:], validate=True)
+            if image[:16] != b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR':
+                raise ValueError()
+            width, height = struct.unpack('>II', image[16:24])
+            if not (0 < width <= 2048 and 0 < height <= 2048 and width * height <= 2097152):
+                raise ValueError()
+            from PyQt6.QtGui import QImage
+            if QImage.fromData(image, 'PNG').isNull():
+                raise ValueError()
+        except (ValueError, struct.error):
+            raise ValueError('The team drawing could not be read. Clear it and sign again.') from None
+        return Team('team-' + uuid.uuid4().hex, name, signature=signature)
+
     def assign_team(self, player, team_id):
         if (self.current_round is not None or not self.team_mode
                 or player not in self.players):
@@ -127,6 +171,8 @@ class TeamMode:
             old.members.remove(player)
             if old.representative is player:
                 old.representative = next(iter(old.members), None)
+            if not old.members:
+                self.teams.remove(old)
         player.team = team
         team.members.append(player)
         if team.representative is None:
@@ -181,7 +227,8 @@ class TeamMode:
     def handle_team_action(self, action):
         kind, *args = action
         if kind == "join":
-            handler, name, color, display_name, team_id = args
+            handler, name, color, display_name, team_id, *creation = args
+            new_team = creation[0] if creation else None
             if handler.player is not None or getattr(handler, "ws_connection", True) is None:
                 return
             if not self.buzzer_controller.accepting_players or self.current_round is not None:
@@ -190,18 +237,34 @@ class TeamMode:
             if len(self.players) >= (MAXTEAMPLAYERS if self.team_mode else MAXPLAYERS):
                 handler.send("FULL")
                 return
+            if not isinstance(name, str) or not name.strip() or len(name) > 350000:
+                handler.send('TEAM_ERROR', 'Enter your name and signature before joining.')
+                return
+            if self.team_mode and (not isinstance(display_name, str) or not 1 <= len(display_name.strip()) <= 40):
+                handler.send('TEAM_ERROR', 'Enter your individual name (up to 40 characters).')
+                return
             team = next((t for t in self.teams if t.id == team_id), None)
+            if self.team_mode and new_team is not None:
+                try:
+                    if team_id:
+                        raise ValueError('Choose an existing team or create a new one, not both.')
+                    team = self.make_team(new_team)
+                except ValueError as error:
+                    handler.send('TEAM_ERROR', str(error))
+                    return
             if self.team_mode and team is None:
                 handler.send("TEAM_ERROR", "Choose a team before joining.")
                 handler.send("TEAM_STATE", json.dumps(self.team_state()))
                 return
             from jparty.game import Player
-            player = Player(name, color, handler, display_name)
+            player = Player(name, color, handler, display_name.strip() if isinstance(display_name, str) else '')
             handler.player = player
             self.buzzer_controller.connected_players.append(player)
             self.players = self.buzzer_controller.connected_players
             if self.team_mode:
-                self.assign_team(player, team_id)
+                if new_team is not None:
+                    self.teams.append(team)
+                self.assign_team(player, team.id)
             self.new_player()
             handler.send("TOKEN", player.token.hex())
             handler.send("TEAM_STATE", json.dumps(self.team_state(player)))

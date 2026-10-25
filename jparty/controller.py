@@ -182,8 +182,9 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
                 self.send("START_GAME_COUNTDOWN", tornado.escape.json_encode(self.controller.game.start_countdown_state()))
 
     def on_message(self, message):
-        # do this first to kill latency
-        if "BUZZ" in message:
+        parsed = tornado.escape.json_decode(message)
+        msg = parsed["message"]
+        if msg == "BUZZ":
             logging.info(f"received buzzer press")
             if self.player == None:
                 logging.info(f"no player associated with this buzzer; skipping")
@@ -192,13 +193,11 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
             self.buzz()
             return
         logging.info(f"received json message: {message}")
-        parsed = tornado.escape.json_decode(message)
-        msg = parsed["message"]
         text = parsed["text"]
         if msg == "NAME":
-            buzzerColor = parsed["buzzerColor"]
+            buzzerColor = parsed.get("buzzerColor", 'Phone Only')
             logging.info(f"received NAME: {text}")
-            self.init_player(text, buzzerColor, parsed.get("displayName", ""), parsed.get("team_id"))
+            self.init_player(text, buzzerColor, parsed.get("displayName", ""), parsed.get("team_id"), parsed.get('new_team'))
         elif msg == "CHECK_IF_EXISTS":
             logging.info(f"Checking if {text} exists")
             buzzerColor = None
@@ -233,9 +232,9 @@ class BuzzerSocketHandler(tornado.websocket.WebSocketHandler):
         else:
             raise Exception("Unknown message")
 
-    def init_player(self, name, buzzerColor, displayName="", team_id=None):
+    def init_player(self, name, buzzerColor, displayName="", team_id=None, new_team=None):
         # Registration and team changes share the game thread with start validation.
-        self.controller.game.team_action_trigger.emit(("join", self, name, buzzerColor, displayName, team_id))
+        self.controller.game.team_action_trigger.emit(("join", self, name, buzzerColor, displayName, team_id, new_team))
         return
 
     def buzz(self):

@@ -2,6 +2,9 @@
 import datetime
 import json
 import threading
+import base64
+import struct
+import zlib
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -11,6 +14,14 @@ from jparty.game import Game, Player, Board, FinalBoard
 from jparty.controller import BuzzerController, BuzzerSocketHandler
 from jparty.auto_host import AutoHostController
 from jparty.teams import Team
+
+
+def team_drawing():
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0))
+           + chunk(b'IDAT', zlib.compress(b'\x00\xff\xff\xff\xff')) + chunk(b'IEND', b''))
+    return 'data:image/png;base64,' + base64.b64encode(png).decode()
 
 
 class TeamGameTests(unittest.TestCase):
@@ -62,6 +73,81 @@ class TeamGameTests(unittest.TestCase):
     def roster(self):
         return [self.join('Ada').player, self.join('Ben').player,
                 self.join('Cal', 'team-2').player]
+
+    def create(self, name='Ada', team_name='Red Rockets', signature=None):
+        handler = SimpleNamespace(player=None, send=Mock(), controller=self.controller, close=Mock())
+        BuzzerSocketHandler.init_player(handler, name, 'Phone Only', name, None,
+                                       {'name': team_name, 'signature': signature or team_drawing()})
+        return handler
+
+    def test_lobby_has_no_host_created_defaults_and_loads_mode(self):
+        self.game.config['team_mode'] = True
+        self.game.init_teams()
+        self.assertTrue(self.game.team_mode)
+        self.assertEqual(self.game.teams, [])
+        self.assertFalse(self.game.teams_ready())
+
+    def test_creator_registers_individually_and_teammates_choose_created_team(self):
+        self.game.configure_teams(True)
+        creator = self.create().player
+        team = creator.team
+        self.assertEqual(team.name, 'Red Rockets')
+        self.assertEqual(team.signature, team_drawing())
+        self.assertEqual(creator.display_name, 'Ada')
+        self.assertEqual(creator.name, 'Ada')
+        self.assertIs(team.representative, creator)
+        teammate = self.join('Ben', team.id).player
+        self.assertIs(teammate.team, team)
+        self.assertFalse(self.game.teams_ready())
+        self.create('Cal', 'Blue Crew')
+        self.assertTrue(self.game.teams_ready())
+
+    def test_duplicate_or_invalid_creation_cannot_leave_orphan_teams_or_players(self):
+        self.game.configure_teams(True)
+        self.create()
+        for name, signature in [('red rockets', team_drawing()), (' ', team_drawing()), ('Bad', 'data:image/png;base64,bad')]:
+            handler = self.create('Ben', name, signature)
+            self.assertIsNone(handler.player)
+            self.assertEqual(handler.send.call_args.args[0], 'TEAM_ERROR')
+        self.assertEqual(len(self.game.teams), 1)
+        self.assertEqual(len(self.game.players), 1)
+
+    def test_creation_cap_and_play_lock_are_enforced_on_game_thread(self):
+        self.game.configure_teams(True)
+        for index in range(8):
+            self.assertIsNotNone(self.create(str(index), f'Team {index}').player)
+        self.assertIsNone(self.create('Ninth', 'Extra').player)
+        self.assertEqual(len(self.game.teams), 8)
+        self.game.current_round = object()
+        self.assertIsNone(self.create('Late', 'Late team').player)
+        self.assertEqual(len(self.game.teams), 8)
+
+    def test_auto_host_players_can_create_teams_and_share_scores(self):
+        self.game.configure_teams(True)
+        self.game.config['auto_host']['enabled'] = True
+        creator = self.create().player
+        teammate = self.join('Ben', creator.team.id).player
+        self.game.set_score(teammate, 400)
+        self.assertEqual(creator.score, 400)
+        self.assertIs(creator.team.representative, creator)
+
+    def test_full_roster_rejects_creation_without_leaving_an_empty_team(self):
+        self.game.configure_teams(True)
+        creator = self.create().player
+        for index in range(31):
+            self.assertIsNotNone(self.join(str(index), creator.team.id).player)
+        rejected = self.create('Extra', 'New Team')
+        self.assertIsNone(rejected.player)
+        rejected.send.assert_called_with('FULL')
+        self.assertEqual(len(self.game.teams), 1)
+
+    def test_creation_rejects_missing_individual_name_and_cancels_pending_start(self):
+        self.game.configure_teams(True)
+        self.assertIsNone(self.create('').player)
+        self.assertEqual(self.game.teams, [])
+        self.game.start_countdown_deadline = 100
+        self.create()
+        self.assertIsNone(self.game.start_countdown_deadline)
 
     def clue(self):
         g = self.game

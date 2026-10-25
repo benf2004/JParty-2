@@ -28,29 +28,38 @@ class NameLabel(MyLabel):
     def __init__(self, name, parent, height=None):
         self.signature = None
         super().__init__("", self.startNameFontSize, parent)
-
-        if name[:21] == "data:image/png;base64":
-            i = QImage()
-            i.loadFromData(urlsafe_b64decode(name[22:]), "PNG")
-            self.signature = QPixmap.fromImage(i)
-        else:
-            self.setText(name)
-
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self._name = None
+        self.set_name(name)
         self.setGraphicsEffect(None)
         self.setAutosizeMargins(0.05)
         if height is not None:
             self.setFixedHeight(height)
+
+    def set_name(self, name):
+        if name == self._name:
+            return
+        self._name = name
+        self.signature = None
+        self.clear()
+        if name.startswith("data:image/png;base64,"):
+            i = QImage()
+            i.loadFromData(urlsafe_b64decode(name[22:]), "PNG")
+            self.signature = QPixmap.fromImage(i)
+            self.resizeEvent(None)
+        else:
+            self.setText(name)
 
     def startNameFontSize(self):
         return self.height() * 1
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self.signature is not None:
+        if self.signature is not None and not self.signature.isNull():
             self.setPixmap(
                 self.signature.scaled(
-                    int(self.height() * NameLabel.name_aspect_ratio),
-                    self.height(),
+                    self.width(), self.height(),
+                    aspectRatioMode=Qt.AspectRatioMode.KeepAspectRatio,
                     transformMode=Qt.TransformationMode.SmoothTransformation,
                 )
             )
@@ -71,6 +80,11 @@ class PlayerWidget(QWidget):
         self.buzz_delay = None # Holds stats for buzz delay
 
         self.name_label = NameLabel(player.name, self)
+        self.team_caption = MyLabel(player.name, lambda: self.height() * 0.045, self)
+        self.team_caption.setTextFormat(Qt.TextFormat.PlainText)
+        self.team_caption.setVisible(isinstance(player, Team) and bool(player.signature))
+        self.member_signature = NameLabel('', self)
+        self.member_signature.setVisible(isinstance(player, Team))
         self.member_label = MyLabel("", lambda: self.height() * 0.06, self)
         self.member_label.setWordWrap(True)
         self.member_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -106,10 +120,14 @@ class PlayerWidget(QWidget):
         layout.addStretch(6)
         layout.addWidget(self.score_label, 10)
         layout.addStretch(15)
-        layout.addWidget(self.name_label, 40)
         if isinstance(player, Team):
-            layout.addWidget(self.member_label, 12)
+            layout.addWidget(self.team_caption, 6)
+            layout.addWidget(self.name_label, 24)
+            layout.addWidget(self.member_label, 7)
+            layout.addWidget(self.member_signature, 15)
             self.refresh_team_label()
+        else:
+            layout.addWidget(self.name_label, 40)
         layout.addWidget(self.stats_label, 10)
         layout.addWidget(self.dummy_stats_label, 10)
         layout.addStretch(2)
@@ -160,12 +178,15 @@ class PlayerWidget(QWidget):
     def refresh_team_label(self):
         if not isinstance(self.player, Team):
             return
-        self.name_label.setText(self.player.name)
+        self.name_label.set_name(self.player.signature or self.player.name)
+        self.team_caption.setText(self.player.name)
         answering = self.game.answering_player
         if answering in self.player.members:
             text = "Answering: " + member_name(answering)
+            self.member_signature.set_name(answering.name)
         else:
-            text = "Acting: " + member_name(self.player.representative)
+            text = "Representative: " + member_name(self.player.representative)
+            self.member_signature.set_name('')
         self.member_label.setText(text)
         self.update_score()
 

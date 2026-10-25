@@ -307,9 +307,27 @@ button:active {
 }
 
 /* Shared team identity stays visible on every phone page. */
-#team-banner { position: relative; padding: 12px; background: #111144; color: white;
+#team-banner { position: relative; padding: 8px 16px; background: #111144; color: white;
   text-align: center; font-size: 16px; }
 #team-banner select, #join-team-section select { max-width: 95%; padding: 8px;
   margin: 6px; font-size: 18px; color: #111; }
 #join-team-section { text-align: center; color: white; }
 #team-error { color: #ffcc80; }
+#team-error:empty { display: none; }
+#team-error { padding: 8px 16px; font-size: 14px; }
+#team-summary { display: inline; font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
+#team-role { display: inline; font-size: 10px; margin-left: 8px; padding: 3px 6px; border-radius: 6px; background: #ffffff18; }
+#team-role:empty { display: none; }
+#lobby-team-section { font-size: 12px; margin-top: 4px; }
+#lobby-team-section summary { cursor: pointer; }
+.name-page { max-width: 640px; margin-left: auto; margin-right: auto; padding-bottom: 24px; }
+.name-page .name-hint { font-size: 20px; margin: 8px 0 16px; }
+#join-team-section { margin: 8px 0 16px; }
+#join-team-section label, .signature-label { display: block; color: white; font-size: 14px; text-align: left; margin: 10px 0 6px; }
+#join-team-section select { width: 100%; max-width: 100%; margin: 6px 0; font-size: 16px; border-radius: 10px; }
+#create-team-section { margin-top: 12px; padding: 12px; border: 1px solid #ffffff30; border-radius: 12px; background: #ffffff08; }
+#new-team-name { padding: 10px 12px; font-size: 16px; border-radius: 8px; }
+#team-name-canvas, #name-canvas { width: 100%; border: 2px solid #ffffff80; border-radius: 10px; touch-action: none; }
+.team-creation-hint { font-size: 12px; color: #c9c9e6; }
+#clear-team-signature { font-family: Verdana, sans-serif; font-size: 12px; border: 0; padding: 8px 12px; margin-top: 6px; border-radius: 8px; }
+.native-ios .w3-container:not(.name-page) { margin-top: 24px !important; }

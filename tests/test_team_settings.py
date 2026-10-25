@@ -31,7 +31,7 @@ class TeamSettingsTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / 'config.json'
-        self.path.write_text(json.dumps(DEFAULT_CONFIG))
+        self.path.write_text(json.dumps({**DEFAULT_CONFIG, 'team_mode': True}))
         self.game.config = copy.deepcopy(DEFAULT_CONFIG)
         self.game.main_display = Mock()
         self.game.buzzer_controller.player_url = Mock(return_value='http://localhost:8080')
@@ -66,68 +66,92 @@ class TeamSettingsTests(unittest.TestCase):
         shortcut.click()
         self.assertEqual(self.dialog.tabs.tabText(self.dialog.tabs.currentIndex()), 'Local Services')
 
-    def test_names_and_toggle_stay_drafts_until_save(self):
-        self.panel.names[0].setText('Red Rockets')
+    def test_toggle_stays_a_draft_and_host_cannot_edit_team_names(self):
         self.panel.enabled.setChecked(False)
         self.assertTrue(self.game.team_mode)
         self.assertEqual(self.game.teams[0].name, 'Red')
-        self.assertFalse(self.panel.names[0].isEnabled())
+        self.assertFalse(hasattr(self.panel, 'names'))
         self.dialog.reject()
         self.assertTrue(self.game.team_mode)
-        self.assertEqual(self.game.teams[0].name, 'Red')
 
-    def test_save_applies_team_names_and_broadcasts_new_lobby_state(self):
-        self.panel.names[0].setText('Red Rockets')
-        before = self.game.roster_version
-        self.dialog.save_settings(close=False)
-        self.assertEqual(self.game.teams[0].name, 'Red Rockets')
-        self.assertGreater(self.game.roster_version, before)
-        sent = self.game.players[0].waiter.send.call_args_list
-        states = [json.loads(c.args[1]) for c in sent if c.args[0] == 'TEAM_STATE']
-        self.assertEqual(states[-1]['team_name'], 'Red Rockets')
+    def test_mode_save_persists_and_restarts_clearing_lobby_teams(self):
+        self.panel.enabled.setChecked(False)
+        with patch('jparty.welcome_widget.os.execv') as restart:
+            self.dialog.save_settings(close=False)
+        restart.assert_called_once()
+        self.assertFalse(json.loads(self.path.read_text())['team_mode'])
+        self.assertFalse(self.game.team_mode)
+        self.assertEqual(self.game.teams, [])
+
+    def test_unchanged_mode_saves_without_restarting_or_rewriting_teams(self):
+        with patch('jparty.welcome_widget.os.execv') as restart:
+            self.dialog.save_settings(close=False)
+        restart.assert_not_called()
+        self.assertTrue(json.loads(self.path.read_text())['team_mode'])
+        self.assertEqual(self.game.teams[0].name, 'Red')
         self.assertEqual(self.dialog.settings_feedback.text(), 'Settings saved.')
 
-    def test_invalid_team_names_prevent_partial_settings_save(self):
-        before = self.path.read_text()
-        self.panel.names[0].setText('Blue')
-        self.dialog.save_settings(close=False)
-        self.assertIn('different name', self.dialog.settings_feedback.text())
-        self.assertEqual(self.dialog.tabs.currentIndex(), self.dialog.team_tab_index)
-        self.assertEqual(self.path.read_text(), before)
-        self.assertEqual(self.game.teams[0].name, 'Red')
-        self.panel.names[0].setText(' ')
-        self.assertIn('every team', self.panel.validation_error())
+    def test_enabling_team_mode_restarts_and_is_loaded_by_next_game(self):
+        from PyQt6.QtCore import QObject
+        from jparty.game import Game
+        self.dialog.close()
+        self.game.configure_teams(False)
+        self.path.write_text(json.dumps({**DEFAULT_CONFIG, 'team_mode': False}))
+        self.dialog = SettingsMenu(self.parent)
+        self.panel = self.dialog.team_panel
+        self.panel.enabled.setChecked(True)
+        with patch('jparty.welcome_widget.os.execv') as restart:
+            self.dialog.save_settings(close=False)
+        restart.assert_called_once()
+        next_game = Game.__new__(Game)
+        QObject.__init__(next_game)
+        next_game.config = json.loads(self.path.read_text())
+        next_game.init_teams()
+        self.assertTrue(next_game.team_mode)
+        self.assertEqual(next_game.teams, [])
 
-    def test_live_roster_updates_preserve_unsaved_names(self):
-        self.panel.names[0].setText('Draft name')
+    def test_live_game_prevents_partial_mode_save(self):
+        before = self.path.read_text()
+        self.game.current_round = object()
+        self.panel.enabled.setChecked(False)
+        self.dialog.save_settings(close=False)
+        self.assertIn('locked during play', self.dialog.settings_feedback.text())
+        self.assertEqual(self.path.read_text(), before)
+        self.assertTrue(self.game.team_mode)
+
+    def test_live_roster_updates_preserve_unsaved_toggle(self):
+        self.panel.enabled.setChecked(False)
         self.fixture.join('Dee', 'team-2')
         self.assertIn('4 players joined', self.panel.roster_summary.text())
-        self.assertEqual(self.panel.names[0].text(), 'Draft name')
-        self.assertEqual(self.game.teams[0].name, 'Red')
+        self.assertFalse(self.panel.enabled.isChecked())
+        self.assertTrue(self.game.team_mode)
 
     def test_controls_lock_during_play_while_roster_remains_available(self):
         self.game.current_round = object()
         self.game.teams_changed.emit()
         self.assertFalse(self.panel.enabled.isEnabled())
-        self.assertFalse(self.panel.count.isEnabled())
-        self.assertFalse(self.panel.names[0].isEnabled())
         self.assertTrue(self.panel.roster_button.isEnabled())
         self.assertIn('locked during play', self.panel.lock_notice.text())
         self.assertEqual(self.panel.validation_error(), '')
 
-    def test_team_count_limits_keyboard_toggle_and_compact_layout(self):
-        self.assertFalse(self.panel.minus.isEnabled())
-        self.panel.count.setValue(8)
-        self.assertFalse(self.panel.plus.isEnabled())
-        self.assertTrue(all(row.isVisible() for row in self.panel.team_rows))
+    def test_compact_layout_and_keyboard_toggle(self):
         self.dialog.resize(720, 570)
         self.app.processEvents()
-        scroll = self.dialog.tabs.currentWidget()
-        self.assertEqual(scroll.horizontalScrollBar().maximum(), 0)
+        self.assertEqual(self.dialog.tabs.currentWidget().horizontalScrollBar().maximum(), 0)
         self.panel.enabled.setFocus()
         QTest.keyClick(self.panel.enabled, Qt.Key.Key_Space)
         self.assertFalse(self.panel.enabled.isChecked())
         self.assertTrue(self.game.team_mode)
+        self.assertIn('restarts JParty', self.panel.lock_notice.text())
+
+    def test_frozen_restart_does_not_repeat_executable_argument(self):
+        import sys
+        self.panel.enabled.setChecked(False)
+        with patch('jparty.welcome_widget.sys.frozen', True, create=True), \
+                patch('jparty.welcome_widget.sys.argv', ['/Applications/JParty.app/Contents/MacOS/JParty']), \
+                patch('jparty.welcome_widget.os.execv') as restart:
+            self.dialog.save_settings(close=False)
+        restart.assert_called_once_with(sys.executable, [sys.executable])
 
 
 if __name__ == '__main__':

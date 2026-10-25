@@ -434,10 +434,10 @@ function setTeamState(state) {
     if (typeof state.team_mode !== "boolean") return;
     teamState = state;
     window.team_mode = state.team_mode;
-    $("#team-banner").toggle(state.team_mode);
+    $("#team-banner").toggle(state.team_mode && !!state.joined);
     $("#join-team-section").toggle(state.team_mode);
     $("#display-name-section").toggle(window.auto_host_enabled || state.team_mode);
-    if (state.team_mode) $(".name-hint").text("Type your name, choose a team, and sign below");
+    if (state.team_mode) $(".name-hint").text("Your name. Your team. Your buzzer.");
     for (const selector of ["#join-team", "#lobby-team"]) {
         const select = $(selector);
         const previous = select.val();
@@ -446,30 +446,49 @@ function setTeamState(state) {
         for (const team of (state.teams || [])) {
             select.append($("<option>").val(team.id).text(team.name + " (" + team.members + ")"));
         }
+        if (selector === '#join-team' && state.in_lobby !== false && state.can_create_team !== false && (state.teams || []).length < 8) {
+            select.append($("<option>").val('__new__').text('+ Create a new team'));
+        }
         select.val(state.team_id || previous || "");
     }
     $("#lobby-team-section").toggle(state.team_mode && !!state.in_lobby && !!state.joined);
     let summary = state.team_name || "Team mode";
     if (state.joined) {
         summary += " · " + Number(state.score || 0).toLocaleString('en-US', {style: 'currency', currency: 'USD', maximumFractionDigits: 0});
-        if (state.representative) summary += " · Acting: " + state.representative;
-        if (state.is_representative) summary += " (you)";
     }
     $("#team-summary").text(summary);
+    $('#team-role').text(state.is_representative ? 'Team rep' : '');
     $("#team-error").text("");
+    updateTeamCreation();
+    if (current_page === 'name') resizeCanvas();
+}
+function updateTeamCreation() {
+    const creating = window.team_mode && $('#join-team').val() === '__new__';
+    $('#create-team-section').toggle(!!creating);
+    if (creating && teamSignaturePad) resizePad(document.querySelector('#team-name-canvas'), teamSignaturePad, 2.6);
 }
 function changeTeam(teamId) {
     if (teamState.in_lobby && teamId) send("CHANGE_TEAM", teamId);
 }
 
-function nameForm(name, buzzerColor, displayName="") {
+function nameForm(name, buzzerColor="Phone Only", displayName="") {
     console.log(name);
     const teamId = window.team_mode ? $("#join-team").val() : null;
     if (window.team_mode && !teamId) {
         $("#team-error").text("Choose a team before joining.");
         return;
     }
-    send("NAME", name, buzzerColor, {displayName: displayName, team_id: teamId});
+    let newTeam = null;
+    if (window.team_mode && teamId === '__new__') {
+        const teamName = $('#new-team-name').val().trim();
+        if (!teamName || !teamSignaturePad || teamSignaturePad.isEmpty()) {
+            $('#team-error').text('Type and draw your team name before joining.');
+            return;
+        }
+        newTeam = {name: teamName, signature: teamSignaturePad.toDataURL()};
+    }
+    send("NAME", name, buzzerColor, {displayName: displayName || (window.team_mode ? $("input[name='displayname']").val().trim() || name : ''),
+        team_id: teamId === '__new__' ? null : teamId, new_team: newTeam});
 }
 
 function set_max_wager(score) {
@@ -482,14 +501,22 @@ const padding = 2;
 const canvasratio = 1.3422;
 
 var signaturePad;
+var teamSignaturePad;
 
-function resizeCanvas() {
-    const ratio =  Math.max(window.devicePixelRatio || 1, 1);
-    const canvas = document.querySelector("canvas");
+function resizePad(canvas, pad, aspectRatio) {
+    if (!canvas || !canvas.offsetWidth || !pad) return;
+    const data = typeof pad.toData === 'function' ? pad.toData() : null;
+    const ratio = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
     canvas.width = canvas.offsetWidth * ratio;
-    canvas.height = canvas.width / canvasratio;
+    canvas.height = canvas.width / aspectRatio;
+    canvas.style.height = (canvas.offsetWidth / aspectRatio) + 'px';
     canvas.getContext("2d").scale(ratio, ratio);
-    signaturePad.clear(); // otherwise isEmpty() might return incorrect value
+    pad.clear();
+    if (data && data.length) pad.fromData(data);
+}
+function resizeCanvas() {
+    resizePad(document.querySelector('#name-canvas'), signaturePad, window.team_mode ? 2.6 : canvasratio);
+    resizePad(document.querySelector('#team-name-canvas'), teamSignaturePad, 2.6);
 }
 
 
@@ -510,6 +537,11 @@ $(document).ready(function() {
         penColor: "#ffffff",
         backgroundColor: bgColor
     });
+    const teamCanvas = document.querySelector('#team-name-canvas');
+    if (teamCanvas) {
+        teamCanvas.style.width = '100%';
+        teamSignaturePad = new SignaturePad(teamCanvas, {penColor: '#ffffff', backgroundColor: bgColor});
+    }
 
 
     window.addEventListener("resize", resizeCanvas);
@@ -529,6 +561,7 @@ $(document).ready(function() {
     $("#clear-button").on("click", function () {
         signaturePad.clear()
     });
+    $('#clear-team-signature').on('click', function() { if (teamSignaturePad) teamSignaturePad.clear(); });
 
     $("#undo-button").on("click", function () {
         const data = signaturePad.toData();

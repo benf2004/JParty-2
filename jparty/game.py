@@ -748,6 +748,8 @@ class Game(QObject, TeamMode):
         if self.answering_player:
             self.dc.player_widget(self.answering_player).stop_lights()
             self.answering_player = None
+            if getattr(self, 'team_mode', False):
+                self.broadcast_teams()
 
     def back_to_board(self):
         logging.info("back_to_board")

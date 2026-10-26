@@ -6,6 +6,12 @@ const vm = require('node:vm');
 
 function client(cookie = "") {
     let readyCallback;
+    const canvases = Object.fromEntries(['name-canvas', 'team-name-canvas'].map(id => [id, {
+        id, style: {}, offsetWidth: 400, getContext() { return {scale() {}}; },
+    }]));
+    // Match real document order: the team drawing appears before the personal signature.
+    const html = fs.readFileSync(path.join(__dirname, '../jparty/buzzer/templates/index.html'), 'utf8');
+    const firstCanvas = html.match(/<canvas[^>]*id="([^"]+)"/)[1];
     const elements = new Map();
     function element() {
         return {
@@ -32,8 +38,8 @@ function client(cookie = "") {
     const sent = [];
     const context = vm.createContext({
         window: {addEventListener() {}},
-        document: {cookie, querySelector() { return {style: {}, offsetWidth: 400, getContext() { return {scale() {}}; }}; }},
-        SignaturePad: class {clear() {}}, console: {log() {}}, $,
+        document: {cookie, querySelector(selector) { return selector === 'canvas' ? canvases[firstCanvas] : canvases[selector.slice(1)]; }},
+        SignaturePad: class {constructor(canvas) {this.canvas = canvas;} clear() {}}, console: {log() {}}, $,
         location: {protocol: 'http:', host: 'localhost'},
         WebSocket: class { send(value) { sent.push(JSON.parse(value)); } },
     });
@@ -111,6 +117,14 @@ test('a first phone visit requests lobby configuration without a saved token', (
     assert.equal(c.sent.at(-1).message, 'CHECK_IF_EXISTS');
     assert.equal(c.sent.at(-1).text, '');
     assert.equal(c.context.current_page, 'name');
+});
+
+test('personal and team pads attach to their own canvases regardless of document order', () => {
+    const c = client();
+    c.boot();
+    assert.equal(c.context.signaturePad.canvas.id, 'name-canvas');
+    assert.equal(c.context.teamSignaturePad.canvas.id, 'team-name-canvas');
+    assert.notEqual(c.context.signaturePad.canvas, c.context.teamSignaturePad.canvas);
 });
 
 test('a returning phone requests its saved player state', () => {

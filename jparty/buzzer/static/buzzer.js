@@ -526,7 +526,7 @@ $(document).ready(function() {
 
     updater.start();
 
-    const canvas = document.querySelector("canvas");
+    const canvas = document.querySelector("#name-canvas");
     canvas.style.width = "100%";
 
     var bgColor = "#1010a1";

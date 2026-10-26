@@ -1,0 +1,44 @@
+name: Retire superseded queued releases
+
+on:
+  push:
+    branches: ['codex/**']
+    tags: ['v*']
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Cancel older queued tags after their replacement has started
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+          import subprocess
+          from jparty.version import version
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          endpoint = f'repos/{repository}/actions/workflows/main.yml/runs?per_page=100'
+          runs = json.loads(subprocess.check_output(['gh', 'api', endpoint], text=True))['workflow_runs']
+          replacement = any(run['head_branch'] == f'v{version}' and
+                            (run['status'] == 'in_progress' or run['conclusion'] == 'success') for run in runs)
+          if replacement:
+              current = tuple(map(int, version.split('.')))
+              for run in runs:
+                  match = re.fullmatch(r'v(\d+)\.(\d+)\.(\d+)', run['head_branch'] or '')
+                  if (match and run['event'] == 'push' and run['status'] == 'queued'
+                          and tuple(map(int, match.groups())) < current):
+                      subprocess.run(['gh', 'api', '--method', 'POST',
+                                      f'repos/{repository}/actions/runs/{run["id"]}/cancel'], check=True)
+                      print(f'Cancelled superseded queued release {run["head_branch"]}: {run["id"]}')
+          PYTHON

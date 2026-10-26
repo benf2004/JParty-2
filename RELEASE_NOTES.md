@@ -1,4 +1,4 @@
-# JParty 2.4.4
+# JParty 2.4.5
 
 One desktop app, with optional local AI Auto Host. No AI models are included in these downloads.
 
@@ -18,6 +18,7 @@ The macOS apps are signed with an Apple Developer ID, notarized by Apple, and in
 - Theme music streams through the included Qt Multimedia player, preserving looping lobby music, Final Jeopardy playback, mute, and stop controls. No additional player or codec installation is required.
 - Standalone build checks now verify every shared audio file and decode all seven distinct music tracks using the packaged Qt audio decoder before publishing.
 - All existing themes, team features, video playback, and optional local AI Auto Host remain included.
+- Release tests and Apple Silicon builds use supported macOS 15 runners, replacing the retiring macOS 14 image.
 
 The updated iOS Xcode project is included in the repository and source archives. This release's executable downloads are the four desktop builds listed above; there is no installable iOS app attached.
 

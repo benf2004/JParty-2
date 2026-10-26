@@ -7,7 +7,9 @@ KEV_DIR="${HOME}/Library/Application Support/JParty/local-auto-host/kev"
 KEV_PID_FILE="${KEV_DIR}/server.pid"
 KEV_RUNNER="${KEV_DIR}/jparty_kev_server.py"
 KEV_LOG="${HOME}/Library/Application Support/JParty/local-auto-host/kev-server.log"
-KEV_URL="http://localhost:${KEV_PORT}/v1"
+# The managed server binds IPv4 loopback. Avoid hostname resolution / IPv6
+# selection, and never send local readiness checks through an HTTP proxy.
+KEV_URL="http://127.0.0.1:${KEV_PORT}/v1"
 
 kev_enabled() {
   case "$KEV_ENABLED" in
@@ -69,7 +71,7 @@ start_kev() {
   fi
   if ! kev_running; then
     # Refuse to adopt or stop another service using this port.
-    if curl --connect-timeout 1 --max-time 2 -sS "${KEV_URL}/models" >/dev/null 2>&1; then
+    if curl --noproxy '*' --connect-timeout 1 --max-time 2 -sS "${KEV_URL}/models" >/dev/null 2>&1; then
       echo "Port ${KEV_PORT} is already in use by an unmanaged service. Stop it or choose JPARTY_LOCAL_KEV_PORT."
       return 1
     fi
@@ -95,7 +97,7 @@ start_kev() {
       rm -f "$KEV_PID_FILE"
       return 1
     fi
-    if curl --connect-timeout 1 --max-time 2 -fsS "${KEV_URL}/models" 2>/dev/null \
+    if curl --noproxy '*' --connect-timeout 1 --max-time 2 -fsS "${KEV_URL}/models" 2>/dev/null \
       | "${KEV_DIR}/.venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); sys.exit(not any(m.get("name")=="kev-latest" and m.get("run")==sys.argv[1] for m in d.get("models", [])))' "$KEV_CHECKPOINT" 2>/dev/null; then
       echo "Kev is ready."
       return 0

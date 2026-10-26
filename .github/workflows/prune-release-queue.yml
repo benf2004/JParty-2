@@ -9,13 +9,17 @@ permissions:
   contents: read
   actions: write
 
+concurrency:
+  group: release-queue-cleanup
+  cancel-in-progress: false
+
 jobs:
   prune:
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - name: Cancel older queued tags after their replacement has started
+      - name: Cancel older queued tags after their replacement is scheduled
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -30,8 +34,8 @@ jobs:
           repository = os.environ['GITHUB_REPOSITORY']
           endpoint = f'repos/{repository}/actions/workflows/main.yml/runs?per_page=100'
           runs = json.loads(subprocess.check_output(['gh', 'api', endpoint], text=True))['workflow_runs']
-          replacement = any(run['head_branch'] == f'v{version}' and
-                            (run['status'] == 'in_progress' or run['conclusion'] == 'success') for run in runs)
+          replacement = any(run['head_branch'] in (f'v{version}', f'codex/release-{version}') and
+                            (run['status'] in ('queued', 'in_progress') or run['conclusion'] == 'success') for run in runs)
           if replacement:
               current = tuple(map(int, version.split('.')))
               for run in runs:

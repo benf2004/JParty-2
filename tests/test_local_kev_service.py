@@ -49,6 +49,12 @@ class LocalKevServiceTests(unittest.TestCase):
         log = self.kev.parent / 'kev-server.log'
         if result.returncode and log.exists():
             result.stderr += log.read_text()
+            for host in ('127.0.0.1', 'localhost'):
+                probe = subprocess.run(['curl', '--noproxy', '*', '--connect-timeout', '1',
+                                        '--max-time', '2', '-v',
+                                        f'http://{host}:{self.env["JPARTY_LOCAL_KEV_PORT"]}/v1/models'],
+                                       text=True, capture_output=True, timeout=5)
+                result.stderr += f'\nLoopback diagnostic ({host}):\n' + probe.stdout + probe.stderr
         return result
 
     def tearDown(self):
@@ -72,6 +78,12 @@ class LocalKevServiceTests(unittest.TestCase):
         started = self.shell('start_kev setup')
         self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
         self.assertEqual(json.loads((self.kev / 'environment.json').read_text())['HF_HUB_OFFLINE'], '0')
+
+    def test_loopback_health_checks_bypass_configured_proxies(self):
+        started = self.shell('start_kev', http_proxy='http://127.0.0.1:1',
+                             HTTP_PROXY='http://127.0.0.1:1', ALL_PROXY='http://127.0.0.1:1',
+                             no_proxy='', NO_PROXY='')
+        self.assertEqual(started.returncode, 0, started.stdout + started.stderr)
 
     def test_disabled_skips_install_and_start(self):
         result = self.shell('setup_kev; start_kev', JPARTY_LOCAL_KEV_ENABLED='0')

@@ -12,6 +12,7 @@ HELPER = Path(__file__).resolve().parents[1] / "scripts/local_kev_service.sh"
 FAKE_SERVER = '''
 import argparse, json, os
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import TCPServer
 p = argparse.ArgumentParser()
 p.add_argument('--run'); p.add_argument('--host'); p.add_argument('--port', type=int)
 a = p.parse_args()
@@ -21,7 +22,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers()
         self.wfile.write(json.dumps({'models': [{'name': 'kev-latest', 'run': a.run}]}).encode())
-HTTPServer((a.host, a.port), Handler).serve_forever()
+class LoopbackServer(HTTPServer):
+    def server_bind(self):
+        # No reverse DNS is needed for this local test fixture. On macOS 15
+        # runners HTTPServer's getfqdn lookup can stall before listen().
+        TCPServer.server_bind(self)
+        self.server_name = a.host
+        self.server_port = self.server_address[1]
+LoopbackServer((a.host, a.port), Handler).serve_forever()
 '''
 
 

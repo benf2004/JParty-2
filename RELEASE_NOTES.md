@@ -1,4 +1,4 @@
-# JParty 2.4.7
+# JParty 2.5.0
 
 One desktop app, with optional local AI Auto Host. No AI models are included in these downloads.
 
@@ -13,11 +13,13 @@ The macOS apps are signed with an Apple Developer ID, notarized by Apple, and in
 
 ## What changed
 
-- Fix personal name signatures on the phone registration screen. The individual signature pad now attaches to its own canvas instead of the hidden team drawing canvas.
-- Personal and team drawings remain independent, including their clear and undo controls. The fix supports individual and team mode, with manual hosting or Auto Host.
-- Verified touch input, visible drawing, Clear, Undo, viewport resizing, and registration in iPhone-sized Chromium and WebKit sessions.
-- Keeps the smaller audio assets and all existing themes, team features, video playback, and optional local AI Auto Host.
+- Automatic update checks with a lobby notice and Settings → Game → Updates controls. JParty always asks before downloading; choose **Download update**, then **Restart to update** from the lobby. Games keep running until you choose to restart.
+- Downloads are verified against GitHub's SHA-256 digest. Mac updates also require the same Developer ID signature and Gatekeeper acceptance. The previous app copy is retained until the new version opens successfully; failed replacement restores it.
+- Downloaded updates remain ready if you close and reopen JParty. Settings, game history, API keys, and local AI models stay in their existing locations.
+- Auto Host now has a clear On/Off toggle, with **Off** as the default. Existing saved preferences are respected.
+- Keeps the smaller audio assets, working phone signatures, all themes, team features, video playback, and optional local AI Auto Host.
 
+**Install this version manually once to enable future in-app updates.** Updates use the full release archive and require space for the new and previous app copies. Keep the app in a writable folder; Mac users should move it to Applications before updating.
 The updated iOS Xcode project is included in the repository and source archives. This release's executable downloads are the four desktop builds listed above; there is no installable iOS app attached.
 
 ## Optional local AI Auto Host

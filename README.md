@@ -14,6 +14,10 @@ Ever wanted to play the game show Jeopardy? This Python-based application aims t
 ## Download
 Download the desktop app for your platform from [JParty releases](https://github.com/benf2004/JParty-2/releases). One app includes manual hosting and optional Auto Host; local AI models download separately during setup. See [release notes](RELEASE_NOTES.md) for platform support.
 
+From version 2.5.0, JParty checks for stable updates automatically and asks before downloading. Use the lobby notice or **Settings → Game → Updates**, choose **Download update**, then **Restart to update** after your game. Install 2.5.0 manually once to get this feature. Turn automatic checks off in Settings if preferred; manual checks remain available. Updates preserve settings, history, and local AI models.
+
+Auto Host uses an On/Off toggle in **Settings → Auto Host** and defaults to Off. Changing host mode saves the choice and restarts JParty.
+
 ## iPhone / iPad client
 
 The [iOS client](ios/README.md) uses native microphone recording and connects directly to the desktop game over Wi-Fi HTTP, avoiding browser microphone restrictions and local HTTPS certificate setup. Open `ios/JParty.xcodeproj` in Xcode to install it on your device. Requires iOS 17 or later.

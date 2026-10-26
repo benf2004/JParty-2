@@ -21,6 +21,7 @@ data_files += [
     (str(project / 'jparty' / 'video.html'), 'jparty'),
     (str(project / 'designer_site'), 'designer_site'),
     (str(project / 'scripts' / '*.sh'), 'scripts'),
+    (str(project / 'scripts' / 'install_update.ps1'), 'scripts'),
     (str(project / 'scripts' / 'local_macos_tts_server.py'), 'scripts'),
     (str(project / 'LICENSE'), 'licenses'),
     (str(project / 'RELEASE_NOTES.md'), 'docs'),

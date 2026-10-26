@@ -49,6 +49,8 @@ from jparty.constants import DEFAULT_CONFIG, DESIGNER_URL
 from jparty.paths import config_path, history_path
 from jparty.local_services import LocalServiceManager
 from jparty.service_widgets import LocalServicesPanel
+from jparty.team_widgets import TeamToggle
+from jparty.update_widgets import UpdatePanel, manager_for
 
 AUTO_HOST_VOICE_OPTIONS = [
     ("alloy", "Neutral, balanced"),
@@ -328,6 +330,8 @@ class Welcome(StartWidget):
         main_layout.addLayout(self.icon_layout, 6)
         main_layout.addWidget(self.title_label, 3)
         main_layout.addWidget(self.version_label, 1)
+        self.update_panel = UpdatePanel(manager_for(game, self), self, compact=True)
+        main_layout.addWidget(self.update_panel, 0, Qt.AlignmentFlag.AlignHCenter)
         main_layout.addStretch(1)
         main_layout.addLayout(select_layout, 5)
         main_layout.addStretch(1)
@@ -751,10 +755,15 @@ class SettingsMenu(QDialog):
         allownegativeinfinal_layout.addWidget(self.allownegativeinfinal_combobox)
 
         auto_host_label = QLabel("Use Auto Host:", self)
-        self.auto_host_combobox = SettingsComboBox(self)
-        self.auto_host_combobox.addItem("Manual host", False)
-        self.auto_host_combobox.addItem("Auto Host enabled", True)
-        self.auto_host_combobox.setCurrentIndex(1 if current_auto_host.get('enabled') else 0)
+        self.auto_host_toggle = TeamToggle(self)
+        self.auto_host_toggle.setFixedSize(46, 28)
+        self.auto_host_toggle.setAccessibleName('Auto Host')
+        self.auto_host_toggle.setChecked(bool(current_auto_host.get('enabled', False)))
+        self.auto_host_toggle_status = QLabel(self)
+        def show_host_mode(enabled):
+            self.auto_host_toggle_status.setText('On · JParty hosts' if enabled else 'Off · You host')
+        self.auto_host_toggle.toggled.connect(show_host_mode)
+        show_host_mode(self.auto_host_toggle.isChecked())
 
         ai_provider_label = QLabel("Auto Host AI provider:", self)
         self.auto_host_provider_combobox = SettingsComboBox(self)
@@ -771,7 +780,9 @@ class SettingsMenu(QDialog):
 
         auto_host_layout = QHBoxLayout()
         auto_host_layout.addWidget(auto_host_label)
-        auto_host_layout.addWidget(self.auto_host_combobox)
+        auto_host_layout.addWidget(self.auto_host_toggle)
+        auto_host_layout.addWidget(self.auto_host_toggle_status)
+        auto_host_layout.addStretch()
 
         auto_host_provider_layout = QHBoxLayout()
         auto_host_provider_layout.addWidget(ai_provider_label)
@@ -1062,6 +1073,20 @@ class SettingsMenu(QDialog):
         group(game_body, 'Appearance', [theme_layout, showtextwithimages_layout])
         group(game_body, 'Rules and timing', [earlybuzztimeout_layout, allownegative_layout,
                                            allownegativeinfinal_layout, wayback_layout])
+        self.update_manager = manager_for(game, self)
+        self.update_panel = UpdatePanel(self.update_manager, self)
+        self.update_check_toggle = TeamToggle(self)
+        self.update_check_toggle.setFixedSize(46, 28)
+        self.update_check_toggle.setAccessibleName('Automatically check for updates')
+        self.update_check_toggle.setChecked(bool(config.get('updates', {}).get('automatic_check', True)))
+        check_row = QHBoxLayout()
+        check_row.addWidget(QLabel('Automatically check for updates:'))
+        check_row.addWidget(self.update_check_toggle)
+        check_row.addStretch()
+        update_hint = QLabel('JParty asks before downloading. Install from the lobby when you’re ready; your settings and local models stay in place.')
+        update_hint.setWordWrap(True)
+        update_hint.setProperty('muted', True)
+        group(game_body, 'Updates', [check_row, update_hint, self.update_panel])
         game_body.addStretch()
 
         from jparty.teams import TeamMode
@@ -1242,7 +1267,7 @@ class SettingsMenu(QDialog):
 
     def auto_host_settings(self):
         auto_host = self._saved_auto_host.copy()
-        auto_host['enabled'] = bool(self.auto_host_combobox.currentData())
+        auto_host['enabled'] = self.auto_host_toggle.isChecked()
         auto_host['ai_provider'] = self.auto_host_provider_combobox.currentData()
         auto_host['judge_provider'] = self.judge_provider_combobox.currentData() or 'local_binary'
         auto_host['kev_base_url'] = self.kev_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['kev_base_url']
@@ -1324,6 +1349,10 @@ class SettingsMenu(QDialog):
         if auto_host['enabled'] != bool(config.get('auto_host', {}).get('enabled')):
             requires_restart = True
 
+        if requires_restart and self.update_manager.busy:
+            self.settings_feedback.setText('Wait for the update check or download to finish before restarting JParty.')
+            return
+
         image_fallback = config.get('image_fallback', DEFAULT_CONFIG['image_fallback']).copy()
         image_fallback['use_pexels'] = self.use_pexels_checkbox.isChecked()
         image_fallback['pexels_api_key'] = self.pexels_api_key_input.text().strip()
@@ -1332,6 +1361,8 @@ class SettingsMenu(QDialog):
             self.settings_feedback.setText('Could not save team setup. Check your teams and try again.')
             self.tabs.setCurrentIndex(self.team_tab_index)
             return
+
+        updates = dict(config.get('updates', {}), automatic_check=self.update_check_toggle.isChecked())
 
         # Save config
         logging.info("Saving settings...")
@@ -1346,6 +1377,7 @@ class SettingsMenu(QDialog):
                 'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
                 'image_fallback': image_fallback,
                 'auto_host': auto_host,
+                'updates': updates,
             })
         with open(config_path, 'w') as f:
             json.dump(config, f)
@@ -1363,12 +1395,17 @@ class SettingsMenu(QDialog):
                 'mute_sound': config.get('mute_sound', DEFAULT_CONFIG['mute_sound']),
                 'image_fallback': image_fallback,
                 'auto_host': auto_host,
+                'updates': updates,
             })
             self.parent().game.auto_host.refresh_config()
             url = self.parent().game.buzzer_controller.player_url(prefer_https=True)
             self.parent().game.main_display.welcome_widget.set_url(url)
         except Exception:
             logging.exception("Failed to refresh buzzer URL after settings save")
+
+        self.update_manager.automatic_check = updates['automatic_check']
+        if self.update_manager.automatic_check and self.update_manager.timer is not None:
+            self.update_manager.automatic()
 
         if requires_restart:
             # Restart the application

@@ -92,6 +92,8 @@ jobs:
           with open(os.environ['GITHUB_PATH'], 'a') as stream:
               stream.write(str(directory.resolve()) + '\n')
           PYTHON
+      - name: Verify platform update installer
+        run: python -m unittest discover -s tests -p test_update_installer.py -q
       - name: Build, verify installed executable, and archive
         env:
           JPARTY_REQUIRE_NOTARIZATION: ${{ runner.os == 'macOS' && '1' || '0' }}
@@ -163,7 +165,7 @@ jobs:
           else
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --draft \
-              --title "JParty ${RELEASE_TAG} — Signature pad fix" \
+              --title "JParty ${RELEASE_TAG} — In-app updates" \
               --notes-file RELEASE_NOTES.md
           fi
           gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber

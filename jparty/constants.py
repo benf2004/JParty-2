@@ -24,6 +24,7 @@ DEFAULT_CONFIG = {
   'use_wayback_first': True,
   'mute_sound': False,
   'team_mode': False,
+  'updates': {'automatic_check': True},
   'image_fallback': {
     'use_pexels': False,
     'pexels_api_key': '',

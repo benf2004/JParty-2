@@ -24,6 +24,7 @@ from jparty.utils import resource_path
 from jparty.logger import log
 from jparty.constants import PORT
 from jparty.paths import user_data_dir
+from jparty.updater import UpdateManager
 
 _instance_lock_file = None
 
@@ -138,6 +139,8 @@ def main():
         print("Could not retrieve question font family name.")
 
     game = Game()
+    game.update_manager = UpdateManager(game)
+    game.update_manager.setParent(game)
     logging.info(f"Game core initialized in {time.time() - start_time:.2f}s")
 
     socket_controller = BuzzerController(game)
@@ -179,6 +182,7 @@ def main():
             logging.error(f"Could not start buzzer subprocess: {e}")
     
     QTimer.singleShot(2000, start_buzzers)
+    QTimer.singleShot(3000, game.update_manager.start)
 
     try:
         game.begin()

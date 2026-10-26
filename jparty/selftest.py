@@ -44,7 +44,8 @@ def run(report_path):
             if not (base / 'buzzer' / 'static' / 'vendor' / name).is_file():
                 raise RuntimeError(f'Missing offline phone resource: {name}')
         for name in ('setup_full_local_auto_host_macos.sh', 'start_full_local_auto_host_macos.sh',
-                     'stop_full_local_auto_host_macos.sh', 'local_kev_service.sh', 'local_macos_tts_server.py'):
+                     'stop_full_local_auto_host_macos.sh', 'local_kev_service.sh', 'local_macos_tts_server.py',
+                     'install_update.sh', 'install_update.ps1'):
             if not (Path(root) / 'scripts' / name).is_file():
                 raise RuntimeError(f'Missing optional local AI setup helper: {name}')
         game = Game()
@@ -59,6 +60,12 @@ def run(report_path):
         tabs = [settings.tabs.tabText(i) for i in range(settings.tabs.count())]
         if 'Team mode' not in tabs or 'Local Services' not in tabs:
             raise RuntimeError(f'Missing desktop settings: {tabs}')
+        if settings.auto_host_toggle.isChecked():
+            raise RuntimeError('Auto Host must default to off')
+        if not settings.update_check_toggle.isChecked():
+            raise RuntimeError('Automatic update checks must default to on')
+        if settings.update_manager.status != 'idle':
+            raise RuntimeError('Creating settings must not start update downloads or checks')
         settings.hide()
         board.hide()
         host.hide()
@@ -66,7 +73,8 @@ def run(report_path):
             'platform': platform.system(), 'architecture': platform.machine(),
             'frozen': bool(getattr(sys, 'frozen', False)), 'settings_tabs': tabs,
             'phone_assets': 'bundled', 'models': 'optional first-run downloads',
-            'audio': audio_report}, indent=2))
+            'updates': 'ask before download; lobby restart; bundled installers',
+            'auto_host_control': 'toggle; default off', 'audio': audio_report}, indent=2))
         return 0
     except Exception:
         report.write_text(json.dumps({'status': 'failed', 'error': traceback.format_exc()}, indent=2))

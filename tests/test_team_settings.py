@@ -58,6 +58,47 @@ class TeamSettingsTests(unittest.TestCase):
         self.manager.deleteLater()
         self.app.processEvents()
 
+    def test_auto_host_defaults_off_and_keyboard_toggle_saves_with_restart(self):
+        self.assertFalse(self.dialog.auto_host_toggle.isChecked())
+        self.assertIn('Off', self.dialog.auto_host_toggle_status.text())
+        self.dialog.tabs.setCurrentIndex(2)
+        self.dialog.auto_host_toggle.setFocus()
+        QTest.keyClick(self.dialog.auto_host_toggle, Qt.Key.Key_Space)
+        self.assertTrue(self.dialog.auto_host_toggle.isChecked())
+        self.assertIn('On', self.dialog.auto_host_toggle_status.text())
+        with patch('jparty.welcome_widget.os.execv') as restart:
+            self.dialog.save_settings(close=False)
+        restart.assert_called_once()
+        self.assertTrue(json.loads(self.path.read_text())['auto_host']['enabled'])
+
+    def test_auto_host_keeps_existing_enabled_preference(self):
+        self.dialog.close()
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        config['team_mode'] = True
+        config['auto_host']['enabled'] = True
+        self.path.write_text(json.dumps(config))
+        self.dialog = SettingsMenu(self.parent)
+        self.assertTrue(self.dialog.auto_host_toggle.isChecked())
+
+    def test_update_preference_is_draft_then_persisted_without_restart(self):
+        self.assertTrue(self.dialog.update_check_toggle.isChecked())
+        self.dialog.update_check_toggle.setChecked(False)
+        self.assertTrue(self.dialog.update_manager.automatic_check)
+        with patch('jparty.welcome_widget.os.execv') as restart:
+            self.dialog.save_settings(close=False)
+        restart.assert_not_called()
+        self.assertFalse(json.loads(self.path.read_text())['updates']['automatic_check'])
+        self.assertFalse(self.dialog.update_manager.automatic_check)
+
+    def test_restart_settings_wait_for_active_download(self):
+        self.dialog.update_manager.status = 'downloading'
+        self.dialog.auto_host_toggle.setChecked(True)
+        with patch('jparty.welcome_widget.os.execv') as restart:
+            self.dialog.save_settings(close=False)
+        restart.assert_not_called()
+        self.assertFalse(json.loads(self.path.read_text())['auto_host']['enabled'])
+        self.assertIn('download', self.dialog.settings_feedback.text())
+
     def test_own_tab_keeps_local_service_navigation_correct(self):
         titles = [self.dialog.tabs.tabText(i) for i in range(self.dialog.tabs.count())]
         self.assertEqual(titles, ['Game', 'Team mode', 'Auto Host', 'Local Services', 'Images'])

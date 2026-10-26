@@ -1,6 +1,5 @@
-import simpleaudio as sa
-
-from threading import Lock, Thread
+from functools import lru_cache
+import logging
 import re
 import os
 import sys
@@ -8,7 +7,8 @@ import json
 
 from PyQt6.QtGui import QColor, QFontMetrics
 from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QPushButton, QSizePolicy
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QObject, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from jparty.paths import config_path
 
 def get_base_path(file=None):
@@ -23,6 +23,16 @@ def get_base_path(file=None):
 
 _cached_theme = None
 
+
+@lru_cache(maxsize=4)
+def audio_assets(base_path):
+    try:
+        with open(os.path.join(base_path, 'data', 'audio-manifest.json')) as stream:
+            return json.load(stream)['files']
+    except FileNotFoundError:
+        return {}
+
+
 def resource_path(relative_path):
     global _cached_theme
     base_path = get_base_path()
@@ -36,82 +46,64 @@ def resource_path(relative_path):
         except Exception:
             _cached_theme = 'default'
 
-    theme = _cached_theme
+    for theme in (_cached_theme, 'default'):
+        # Keep direct theme overrides working, including legacy WAV recordings.
+        resolved_file = os.path.join(base_path, 'data', theme, relative_path)
+        if os.path.isfile(resolved_file):
+            return resolved_file
+        shared = audio_assets(base_path).get(f'{theme}/{relative_path}')
+        if shared:
+            resolved_file = os.path.join(base_path, 'data', shared)
+            if os.path.isfile(resolved_file):
+                return resolved_file
+    return os.path.join(base_path, 'data', 'default', relative_path)
 
-    resolved_file = os.path.join(base_path, "data", theme, relative_path)
-    print(resolved_file)
-    if os.path.isfile(resolved_file):
-        return resolved_file
 
-    default_file = os.path.join(base_path, "data", "default", relative_path)
-    print("file not found, returning default")
-    print(default_file + "\n")
-    return default_file
+class SongPlayer(QObject):
+    """Stream theme music with Qt; marshal calls from game workers to Qt's thread."""
+    _play_requested = pyqtSignal(str, bool)
+    _mute_requested = pyqtSignal(bool)
 
-
-class SongPlayer(object):
     def __init__(self):
         super().__init__()
-        self.__muted = False
-        self.__wave_obj = sa.WaveObject.from_wave_file(resource_path("intro.wav"))
-        self.__final = sa.WaveObject.from_wave_file(resource_path("final.wav"))
-        self.__play_obj = None
-        self.__repeating = False
-        self.__repeat_thread = None
-        self.__lock = Lock()
-        self.__play_generation = 0
+        self._muted = False
+        self._output = QAudioOutput(self)
+        self._player = QMediaPlayer(self)
+        self._player.setAudioOutput(self._output)
+        self._player.errorOccurred.connect(self._audio_error)
+        self._play_requested.connect(self._play_track)
+        self._mute_requested.connect(self._set_muted)
 
     def set_muted(self, muted):
-        self.__muted = bool(muted)
-        if self.__muted:
-            self.stop()
+        self._mute_requested.emit(bool(muted))
 
     def play(self, repeat=False):
-        self.__play_wave(self.__wave_obj, repeat)
+        self._play_requested.emit('intro.wav', bool(repeat))
 
     def final(self, repeat=False):
-        self.__play_wave(self.__final, repeat)
-
-    def __play_wave(self, wave_obj, repeat=False):
-        self.stop()
-        with self.__lock:
-            self.__repeating = repeat
-            self.__play_generation += 1
-            generation = self.__play_generation
-            if self.__muted:
-                return
-            self.__play_obj = wave_obj.play()
-            if repeat:
-                self.__repeat_thread = Thread(
-                    target=self.__repeat, args=(wave_obj, generation), daemon=True
-                )
-                self.__repeat_thread.start()
+        self._play_requested.emit('final.wav', bool(repeat))
 
     def stop(self):
-        with self.__lock:
-            self.__repeating = False
-            self.__play_generation += 1
-            play_obj = self.__play_obj
-        if play_obj is not None:
-            play_obj.stop()
+        self._play_requested.emit('', False)
 
-    def __repeat(self, wave_obj, generation):
-        while True:
-            with self.__lock:
-                play_obj = self.__play_obj
-                should_repeat = (
-                    self.__repeating and self.__play_generation == generation
-                )
-            if play_obj is None or not should_repeat:
-                break
-            play_obj.wait_done()
-            with self.__lock:
-                if not self.__repeating or self.__play_generation != generation:
-                    break
-                self.__play_obj = wave_obj.play()
-                play_obj = self.__play_obj
-            if play_obj is None:
-                break
+    @pyqtSlot(bool)
+    def _set_muted(self, muted):
+        self._muted = muted
+        self._output.setMuted(muted)
+        if muted:
+            self._player.stop()
+
+    @pyqtSlot(str, bool)
+    def _play_track(self, name, repeat):
+        self._player.stop()
+        if not name or self._muted:
+            return
+        self._player.setLoops(-1 if repeat else 1)
+        self._player.setSource(QUrl.fromLocalFile(resource_path(name)))
+        self._player.play()
+
+    def _audio_error(self, _error, message):
+        logging.warning('Theme music playback failed: %s', message)
 
 
 class CompoundObject(object):

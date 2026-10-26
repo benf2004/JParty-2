@@ -14,7 +14,8 @@ def run(report_path):
         from tornado.template import Loader
         from jparty.paths import config_path
         from jparty.environ import root
-        from jparty.utils import resource_path
+        from jparty.utils import resource_path, get_base_path
+        from jparty.audio_check import verify_theme_audio
         from jparty.version import version
         config = json.loads(Path(config_path).read_text())
         config['auto_host']['enabled'] = False
@@ -31,6 +32,7 @@ def run(report_path):
         for name in ('icon.png', 'player.png', 'podium.png', 'intro.wav', 'final.wav'):
             if not Path(resource_path(name)).is_file():
                 raise RuntimeError(f'Missing bundled resource: {name}')
+        audio_report = verify_theme_audio(Path(get_base_path()) / 'data')
         base = Path(root)
         if not (base / 'buzzer').is_dir():
             base = base / 'jparty'
@@ -63,7 +65,8 @@ def run(report_path):
         report.write_text(json.dumps({'status': 'ok', 'version': version,
             'platform': platform.system(), 'architecture': platform.machine(),
             'frozen': bool(getattr(sys, 'frozen', False)), 'settings_tabs': tabs,
-            'phone_assets': 'bundled', 'models': 'optional first-run downloads'}, indent=2))
+            'phone_assets': 'bundled', 'models': 'optional first-run downloads',
+            'audio': audio_report}, indent=2))
         return 0
     except Exception:
         report.write_text(json.dumps({'status': 'failed', 'error': traceback.format_exc()}, indent=2))

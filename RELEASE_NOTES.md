@@ -1,4 +1,4 @@
-# JParty 2.4.3
+# JParty 2.4.4
 
 One desktop app, with optional local AI Auto Host. No AI models are included in these downloads.
 
@@ -13,13 +13,11 @@ The macOS apps are signed with an Apple Developer ID, notarized by Apple, and in
 
 ## What changed
 
-- Players create or join teams on their phones. Team creators type and draw their team name separately from their individual name and signature; hosts no longer need to set up teams.
-- Saving a team-mode change in Settings restarts JParty and remembers the selected mode. Players join again after the restart.
-- Team podiums show the team's shared score and drawn name, with the answering person's own name and signature underneath.
-- The phone team/score strip is more compact, and lobby team changes expand only when needed. The iOS client's embedded browser also has a compact toolbar with a Game options menu.
-- Team creation validates names and drawings, handles simultaneous duplicate names, cancels pending start countdowns when rosters change, and respects the eight-team and 32-player limits.
-- Registration now correctly handles team names containing “BUZZ”.
-- Mac release builds retry notarization ticket attachment and validation, with detailed ticket diagnostics if verification fails.
+- Smaller downloads: theme audio now occupies about 25 MiB instead of 198 MiB before archive compression.
+- Intro and Final Jeopardy music use 192 kbps MP3, with identical recordings shared between themes. Short sound effects keep their original lossless WAV audio.
+- Theme music streams through the included Qt Multimedia player, preserving looping lobby music, Final Jeopardy playback, mute, and stop controls. No additional player or codec installation is required.
+- Standalone build checks now verify every shared audio file and decode all seven distinct music tracks using the packaged Qt audio decoder before publishing.
+- All existing themes, team features, video playback, and optional local AI Auto Host remain included.
 
 The updated iOS Xcode project is included in the repository and source archives. This release's executable downloads are the four desktop builds listed above; there is no installable iOS app attached.
 

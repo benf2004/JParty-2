@@ -163,7 +163,7 @@ jobs:
           else
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" --draft \
-              --title "JParty ${RELEASE_TAG} — Player-created teams" \
+              --title "JParty ${RELEASE_TAG} — Smaller downloads" \
               --notes-file RELEASE_NOTES.md
           fi
           gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber

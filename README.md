@@ -92,6 +92,10 @@ python scripts/build_release.py
 
 The build script bundles Python, Qt, themes, phone assets, and optional local AI setup helpers. It runs the installed executable from a clean working directory before writing the platform archive, SHA-256 checksum, and smoke-test report to `dist/releases/`. macOS produces an app ZIP, Windows a ZIP containing `JParty.exe` and its `_internal` folder, and Linux a tar.gz that preserves executable permissions. Model weights and personal settings are excluded.
 
+Theme audio is stored once under `jparty/data/audio/`, with `audio-manifest.json` mapping each theme's original cue names to shared files. Intro and Final Jeopardy music use 192 kbps MP3; short effects retain their original lossless WAV audio. Playback uses the included Qt Multimedia runtime, so users do not need to install FFmpeg. Build checks verify all audio hashes and decode every distinct music track using the bundled Qt decoder.
+
+For audio maintenance, `python scripts/prepare_audio_assets.py ORIGINAL_THEMES OUTPUT_DIRECTORY` prepares a complete set of `theme/*.wav` recordings in a separate output directory. This preparation tool requires FFmpeg with the MP3 encoder; ordinary builds use the checked-in optimized assets. The original recordings are retained in Git history through `v2.4.3`. Keep the generated `audio/` directory and `audio-manifest.json` together when replacing assets. Direct theme WAV overrides and missing-theme fallback remain supported.
+
 GitHub Actions builds Apple Silicon and Intel macOS, Windows x64, and Linux x64. After updating `jparty/version.py` and `RELEASE_NOTES.md`, pushing a `codex/release-*` branch runs tests, builds and verifies every platform, and publishes a release at that exact commit. Pushing a `v*` tag also runs the release workflow; its version must match the source. Manual workflow runs build downloadable Actions artifacts without publishing unless run on a release branch.
 
 Automatic local AI setup/start/stop is currently macOS-only. Windows and Linux can use cloud hosting or connect to separately managed compatible local AI services.

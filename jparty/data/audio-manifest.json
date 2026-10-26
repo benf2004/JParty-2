@@ -1,0 +1,32 @@
+{
+  "files": {
+    "biblebonkers/board_fill.wav": "audio/dfdc3cd3bb9dc0609e757493aecfa0aae05f01631ef68192d9fc8a6c67fe2af3.wav",
+    "biblebonkers/dd.wav": "audio/78070990c475516ed5ada28b481e9db38cbe1f719ebfaa61544ab4bb32ddf633.wav",
+    "biblebonkers/final.wav": "audio/a528780ff268b4bab294cc1836647d408ed4d6c109bde85b80eb81f0ea99ed0b.mp3",
+    "biblebonkers/intro.wav": "audio/2b718693826e60c7a9b2753b21d59adbba58b400219c0fc752a00813a742626a.mp3",
+    "biblebonkers/stumped.wav": "audio/df55a91d313cd2b602387bae444bb741cd7dba2139822192c0b1708b2d0c8467.wav",
+    "christmas/board_fill.wav": "audio/5b3c4b6f97e0ef68fa521d1d5b41827d4590d72817514ac98caa695b5ba1c4ec.wav",
+    "christmas/dd.wav": "audio/d089a436b668763eae1e6e87df2948bbc162a55daa9f2bff8de63b2fdcfb5d22.wav",
+    "christmas/final.wav": "audio/52e3f88012151ea99d4fa33378e5138af95adfbc2b4f583da9396a3a35287f4a.mp3",
+    "christmas/intro.wav": "audio/cc232812f810636742f0cd9182c112ab593a28742b59d34e582f0c1ddca89987.mp3",
+    "christmas/stumped.wav": "audio/ce29b8c9016ad63aa0c3593c20b8734460a1118be5f2de79e963508a7cbd2bf2.wav",
+    "default/applause.wav": "audio/638fceee6c68384972946f462ad97050966055c3b345b10247f2b6d02967c3ea.wav",
+    "default/board_fill.wav": "audio/5b3c4b6f97e0ef68fa521d1d5b41827d4590d72817514ac98caa695b5ba1c4ec.wav",
+    "default/dd.wav": "audio/fdbe133c6098eb21e6842dee0641ed64d996f8759b9b65e783d9338601107225.wav",
+    "default/ding.wav": "audio/9dd9394e9289c1e18a801bc285c0b1e482cdd3d7e9d292af67df8bd39a84694c.wav",
+    "default/final.wav": "audio/a528780ff268b4bab294cc1836647d408ed4d6c109bde85b80eb81f0ea99ed0b.mp3",
+    "default/intro.wav": "audio/cc232812f810636742f0cd9182c112ab593a28742b59d34e582f0c1ddca89987.mp3",
+    "default/stumped.wav": "audio/ce29b8c9016ad63aa0c3593c20b8734460a1118be5f2de79e963508a7cbd2bf2.wav",
+    "eightiessynthwave/board_fill.wav": "audio/fef0e07c56f0609f126f00ab695fc42d4fa8e889950e3556b8fffcc7922cdf26.wav",
+    "eightiessynthwave/dd.wav": "audio/9918fcfc34fb4ca72cb640d22dfaec1fa97e1cb24b64e83b4e7eb44378e87c8e.wav",
+    "eightiessynthwave/final.wav": "audio/ea30c8463d9eb47d6ca31d31e4915ac058fb413f3f32660559864016f232c528.mp3",
+    "eightiessynthwave/intro.wav": "audio/cc232812f810636742f0cd9182c112ab593a28742b59d34e582f0c1ddca89987.mp3",
+    "eightiessynthwave/stumped.wav": "audio/b867e9affb76795c6a413a58c5f4eb92156411b87665c018de6a273078f3a9c9.wav",
+    "halloween/board_fill.wav": "audio/c5718a57d4e17db4a19e3a0c7b0f3b3007e4a8fdd51ff8183e1dd5b5e706b74a.wav",
+    "halloween/dd.wav": "audio/2e624a9241b4d853a9b29ca14f9120b6a1fab2a07f598e98f2b34c5db043aabf.wav",
+    "halloween/final.wav": "audio/c1c0500560c402a787103fb1ad79601d5ffedb8184e473104a087e0c7d82446f.mp3",
+    "halloween/intro.wav": "audio/eb62f324b9446295f1c22edf650a75e44feeea3eae4c2022916cdee26ed70ec1.mp3",
+    "halloween/stumped.wav": "audio/dc9cb77facd6ef831e29a0c37fca788304b81ae22428381282b6c7595e17263c.wav"
+  },
+  "version": 1
+}

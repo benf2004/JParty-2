@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 PROFILE = 'jparty-notary'
 PUBLIC_CERTIFICATES = Path(__file__).resolve().parents[1] / 'resources' / 'signing'
@@ -26,6 +27,11 @@ def command(args, label, *, timeout=120):
     except (subprocess.TimeoutExpired, OSError):
         raise RuntimeError(f'{label} could not finish.') from None
     if result.returncode:
+        # Stapler takes only an app path, never credentials. Keep its ticket /
+        # trust diagnostics while continuing to redact authentication commands.
+        if list(args[:2]) == ['xcrun', 'stapler']:
+            print(f'{label} failed (exit {result.returncode}):\n'
+                  f'{result.stdout}\n{result.stderr}', flush=True)
         raise RuntimeError(f'{label} failed. Check the signing/notarization credentials and Apple account access.')
     return result.stdout
 
@@ -136,6 +142,24 @@ def cleanup():
     (directory / 'certificate.p12').unlink(missing_ok=True)
 
 
+def staple_ticket(app):
+    """Retry ticket delivery/validation, without accepting a missing ticket."""
+    for attempt in range(5):
+        try:
+            command(['xcrun', 'stapler', 'staple', '-v', app], 'Staple Apple notarization ticket', timeout=300)
+            command(['xcrun', 'stapler', 'validate', '-v', app], 'Validate stapled notarization ticket')
+            return
+        except RuntimeError:
+            if attempt == 4:
+                raise RuntimeError('Apple accepted the app, but its notarization ticket could not be '
+                                   'stapled and validated after five attempts. See stapler diagnostics above. '
+                                   'The release will not be published.') from None
+            delay = min(30 * (attempt + 1), 60)
+            print(f'Notarization ticket is not ready; retrying staple and validation in {delay} seconds '
+                  f'(attempt {attempt + 2}/5).', flush=True)
+            time.sleep(delay)
+
+
 def notarize(app, report):
     keychain = os.environ.get('JPARTY_SIGNING_KEYCHAIN')
     if not os.environ.get('JPARTY_CODESIGN_IDENTITY') or not keychain:
@@ -166,8 +190,7 @@ def notarize(app, report):
             issues = json.loads(log).get('issues', [])
             print(json.dumps(issues, indent=2), flush=True)
         raise RuntimeError('Apple has not accepted this app for notarization. The release will not be published.')
-    command(['xcrun', 'stapler', 'staple', app], 'Staple Apple notarization ticket', timeout=300)
-    command(['xcrun', 'stapler', 'validate', app], 'Validate stapled notarization ticket')
+    staple_ticket(app)
     command(['codesign', '--verify', '--deep', '--strict', app], 'Verify final app signature', timeout=180)
     command(['spctl', '--assess', '--type', 'execute', '--verbose=4', app], 'Verify Gatekeeper acceptance', timeout=180)
     submission_report = json.loads(report.read_text())

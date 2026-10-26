@@ -1,4 +1,4 @@
-# JParty 2.4.2
+# JParty 2.4.3
 
 One desktop app, with optional local AI Auto Host. No AI models are included in these downloads.
 
@@ -19,6 +19,7 @@ The macOS apps are signed with an Apple Developer ID, notarized by Apple, and in
 - The phone team/score strip is more compact, and lobby team changes expand only when needed. The iOS client's embedded browser also has a compact toolbar with a Game options menu.
 - Team creation validates names and drawings, handles simultaneous duplicate names, cancels pending start countdowns when rosters change, and respects the eight-team and 32-player limits.
 - Registration now correctly handles team names containing “BUZZ”.
+- Mac release builds retry notarization ticket attachment and validation, with detailed ticket diagnostics if verification fails.
 
 The updated iOS Xcode project is included in the repository and source archives. This release's executable downloads are the four desktop builds listed above; there is no installable iOS app attached.
 

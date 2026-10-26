@@ -16,6 +16,27 @@ spec.loader.exec_module(signing)
 
 
 class MacSigningTests(unittest.TestCase):
+    def test_stapling_retries_ticket_delivery_then_validates(self):
+        with patch.object(signing, 'command', side_effect=[RuntimeError('Ticket not found'), '', '']) as command, \
+                patch.object(signing.time, 'sleep') as sleep:
+            signing.staple_ticket(Path('JParty.app'))
+        self.assertEqual([call.args[0][2] for call in command.call_args_list], ['staple', 'staple', 'validate'])
+        sleep.assert_called_once_with(30)
+
+    def test_ticket_validation_failure_retries_stapling(self):
+        with patch.object(signing, 'command', side_effect=['', RuntimeError('Ticket could not validate'), '', '']) as command, \
+                patch.object(signing.time, 'sleep'):
+            signing.staple_ticket(Path('JParty.app'))
+        self.assertEqual([call.args[0][2] for call in command.call_args_list], ['staple', 'validate', 'staple', 'validate'])
+
+    def test_ticket_failure_stops_after_bounded_retries(self):
+        with patch.object(signing, 'command', side_effect=RuntimeError('Invalid ticket')) as command, \
+                patch.object(signing.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'will not be published'):
+                signing.staple_ticket(Path('JParty.app'))
+        self.assertEqual(command.call_count, 5)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [30, 60, 60, 60])
+
     def test_missing_secrets_fail_before_importing(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(signing, 'command') as command:
             with self.assertRaisesRegex(RuntimeError, 'APPLE_APP_SPECIFIC_PASSWORD'):

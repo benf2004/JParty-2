@@ -5,11 +5,12 @@ One desktop app, with optional local AI Auto Host. No AI models are included in 
 ## Downloads
 
 - **macOS arm64**: Apple Silicon (M1 or newer), macOS 11 or newer. Extract the ZIP and drag `JParty.app` to Applications.
-- **macOS x64**: Intel Macs, macOS 12 or newer. Extract the ZIP and drag `JParty.app` to Applications.
 - **Windows x64**: Windows 10/11. Extract the whole ZIP and launch `JParty/JParty.exe`; keep `_internal` alongside it.
 - **Linux x64**: Ubuntu 22.04 or newer, or a compatible desktop distribution. Extract the whole tar.gz and run `JParty/JParty`; keep `_internal` alongside it. Audio and Qt require your distribution's normal ALSA and graphics libraries.
 
-The macOS apps are signed with an Apple Developer ID, notarized by Apple, and include a stapled notarization ticket. Windows executables are not Authenticode signed.
+The macOS app is signed with an Apple Developer ID, notarized by Apple, and includes a stapled notarization ticket. Windows executables are not Authenticode signed.
+
+**Intel Mac download omitted for v2.5.0** because its notarization verification did not pass. Intel Mac users can continue using [v2.4.7](https://github.com/benf2004/JParty-2/releases/tag/v2.4.7).
 
 ## What changed
 
@@ -20,7 +21,7 @@ The macOS apps are signed with an Apple Developer ID, notarized by Apple, and in
 - Keeps the smaller audio assets, working phone signatures, all themes, team features, video playback, and optional local AI Auto Host.
 
 **Install this version manually once to enable future in-app updates.** Updates use the full release archive and require space for the new and previous app copies. Keep the app in a writable folder; Mac users should move it to Applications before updating.
-The updated iOS Xcode project is included in the repository and source archives. This release's executable downloads are the four desktop builds listed above; there is no installable iOS app attached.
+The updated iOS Xcode project is included in the repository and source archives. This release's executable downloads are the three desktop builds listed above; there is no installable iOS app attached.
 
 ## Optional local AI Auto Host
 

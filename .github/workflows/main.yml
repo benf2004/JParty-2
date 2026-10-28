@@ -17,6 +17,8 @@ jobs:
   test:
     runs-on: macos-15
     timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -44,22 +46,16 @@ jobs:
         run: python -m unittest discover -s tests -q
       - name: Phone client tests
         run: node --test tests/*.cjs
+      - name: Select release platforms
+        id: platforms
+        run: python scripts/release_platforms.py >> "$GITHUB_OUTPUT"
 
   build:
     needs: test
     timeout-minutes: 50
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            platform: macos-arm64
-          - os: macos-15-intel
-            platform: macos-x64
-          - os: windows-2022
-            platform: windows-x64
-          - os: ubuntu-22.04
-            platform: linux-x64
+      matrix: ${{ fromJSON(needs.test.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -151,7 +147,11 @@ jobs:
           import json
           from pathlib import Path
           from jparty.version import version
-          for arch in ('arm64', 'x64'):
+          from scripts.release_platforms import release_platforms
+          for platform in release_platforms(version):
+              if not platform['platform'].startswith('macos-'):
+                  continue
+              arch = platform['platform'].removeprefix('macos-')
               report = json.loads(Path(f'release-assets/JParty-{version}-macos-{arch}.notarization.json').read_text())
               if report.get('status') != 'Accepted' or report.get('stapled') is not True or report.get('gatekeeper') != 'accepted':
                   raise SystemExit(f'Mac {arch} has not passed notarization and Gatekeeper checks')

@@ -212,7 +212,7 @@ if ! curl -fsS "$OLLAMA_HEALTH_URL" >/dev/null 2>&1; then
 fi
 wait_for_url "$OLLAMA_HEALTH_URL" "Ollama"
 
-if ! ollama list | awk 'NR > 1 {print $1}' | grep -qx "$LLM_MODEL"; then
+if ! ollama show "$LLM_MODEL" >/dev/null 2>&1; then
   echo "Ollama model '$LLM_MODEL' is not installed."
   echo "Run: ollama pull $LLM_MODEL"
   exit 1

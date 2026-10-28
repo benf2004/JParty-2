@@ -7,7 +7,6 @@ from PyQt6.QtGui import (
     QPixmap,
     QColor,
     QIntValidator,
-    QPolygonF,
 )
 from PyQt6.QtWidgets import (
     QWidget,
@@ -19,16 +18,14 @@ from PyQt6.QtWidgets import (
     QLabel,
     QDialog,
     QComboBox,
-    QCheckBox,
     QPushButton,
     QFileDialog,
     QScrollArea,
     QTabWidget,
-    QGroupBox,
     QApplication,
     QStyleFactory,
 )
-from PyQt6.QtCore import Qt, QSize, QPointF, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 
 import qrcode
 import time
@@ -48,8 +45,12 @@ from jparty.style import WINDOWPAL
 from jparty.constants import DEFAULT_CONFIG, DESIGNER_URL
 from jparty.paths import config_path, history_path
 from jparty.local_services import LocalServiceManager
+from jparty.macos_voice import PersonalVoiceAccess
 from jparty.service_widgets import LocalServicesPanel
 from jparty.team_widgets import TeamToggle
+from jparty.settings_widgets import SettingsComboBox, settings_card
+from jparty.model_widgets import LocalModelsPanel
+from jparty.local_models import OLLAMA_BASE_URL, manager_for as model_manager_for
 from jparty.update_widgets import UpdatePanel, manager_for
 
 AUTO_HOST_VOICE_OPTIONS = [
@@ -589,17 +590,6 @@ class QRWidget(StartWidget):
     def restart(self):
         pass
 
-class SettingsComboBox(QComboBox):
-    """Keep the dropdown affordance visible with the settings stylesheet."""
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor('#637089'))
-        x, y = self.width() - 17, self.height() / 2
-        painter.drawPolygon(QPolygonF([QPointF(x - 4, y - 2), QPointF(x + 4, y - 2), QPointF(x, y + 3)]))
-
 
 class SettingsMenu(QDialog):
     def __init__(self, parent=None):
@@ -632,6 +622,8 @@ class SettingsMenu(QDialog):
         self.service_manager = getattr(game, 'local_services', None)
         if self.service_manager is None:
             self.service_manager = LocalServiceManager(current_auto_host, self)
+
+        self.model_manager = model_manager_for(self.service_manager)
 
         def section_heading(text):
             label = QLabel(text, self)
@@ -691,21 +683,23 @@ class SettingsMenu(QDialog):
         earlybuzztimeout_layout.addWidget(earlybuzztimeout_label)
         earlybuzztimeout_layout.addWidget(self.earlybuzztimeout_combobox)
 
-        # Add a label for the "use_wayback_first" section
-        wayback_label = QLabel("Use Wayback Machine first:", self)
+        def boolean_row(title, checked):
+            label = QLabel(title, self)
+            toggle = TeamToggle(self)
+            toggle.setFixedSize(46, 28)
+            toggle.setAccessibleName(title.rstrip(':'))
+            toggle.setChecked(checked)
+            row = QHBoxLayout()
+            row.addWidget(label)
+            row.addWidget(toggle)
+            row.addStretch()
+            return toggle, row
 
-        # Add a combo box for use_wayback_first selection
-        self.wayback_combobox = SettingsComboBox(self)
-        self.wayback_combobox.addItem("Try archived images first", True)
-        self.wayback_combobox.addItem("Try live images first", False)
-        self.wayback_combobox.setCurrentIndex(0 if current_use_wayback_first else 1)
+        self.wayback_toggle, wayback_layout = boolean_row('Try archived images first:', bool(current_use_wayback_first))
 
-        # Create a horizontal layout for the label and combo box
-        wayback_layout = QHBoxLayout()
-        wayback_layout.addWidget(wayback_label)
-        wayback_layout.addWidget(self.wayback_combobox)
-
-        self.use_pexels_checkbox = QCheckBox("USE PEXELS API (requires OpenAI key or local LLM)", self)
+        self.use_pexels_checkbox = TeamToggle(self)
+        self.use_pexels_checkbox.setFixedSize(46, 28)
+        self.use_pexels_checkbox.setAccessibleName('Find replacement images with Pexels')
         self.use_pexels_checkbox.setChecked(bool(current_image_fallback.get('use_pexels', False)))
         self.use_pexels_checkbox.setToolTip("Only replaces missing J-Archive media images.")
 
@@ -720,39 +714,15 @@ class SettingsMenu(QDialog):
         pexels_key_layout.addWidget(self.pexels_api_key_input)
 
         self.pexels_status_label = QLabel("", self)
-        self.pexels_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pexels_status_label.setWordWrap(True)
         pexels_status_palette = self.pexels_status_label.palette()
         pexels_status_palette.setColor(QPalette.ColorRole.WindowText, QColor(128, 128, 128))
         self.pexels_status_label.setPalette(pexels_status_palette)
 
-        # Add a label for the "allownegative" section
-        allownegative_label = QLabel("Negative scores:", self)
-
-        # Add a combo box for allownegative selection
-        self.allownegative_combobox = SettingsComboBox(self)
-        self.allownegative_combobox.addItem("Allowed", "True")
-        self.allownegative_combobox.addItem("Not allowed", "False")
-        self.allownegative_combobox.setCurrentIndex(max(0, self.allownegative_combobox.findData(current_allownegative)))
-
-        # Create a horizontal layout for the label and combo box
-        allownegative_layout = QHBoxLayout()
-        allownegative_layout.addWidget(allownegative_label)
-        allownegative_layout.addWidget(self.allownegative_combobox)
-
-        # Add a label for the "allownegativeinfinal" section
-        allownegativeinfinal_label = QLabel("Negative scores in Final Jeopardy:", self)
-
-        # Add a combo box for allownegativeinfinal selection
-        self.allownegativeinfinal_combobox = SettingsComboBox(self)
-        self.allownegativeinfinal_combobox.addItem("Allowed", "True")
-        self.allownegativeinfinal_combobox.addItem("Not allowed", "False")
-        self.allownegativeinfinal_combobox.setCurrentIndex(max(0, self.allownegativeinfinal_combobox.findData(current_allownegativeinfinal)))
-
-        # Create a horizontal layout for the label and combo box
-        allownegativeinfinal_layout = QHBoxLayout()
-        allownegativeinfinal_layout.addWidget(allownegativeinfinal_label)
-        allownegativeinfinal_layout.addWidget(self.allownegativeinfinal_combobox)
+        self.allownegative_toggle, allownegative_layout = boolean_row(
+            'Allow negative scores:', str(current_allownegative).lower() == 'true')
+        self.allownegativeinfinal_toggle, allownegativeinfinal_layout = boolean_row(
+            'Allow negative scores in Final:', str(current_allownegativeinfinal).lower() == 'true')
 
         auto_host_label = QLabel("Use Auto Host:", self)
         self.auto_host_toggle = TeamToggle(self)
@@ -768,7 +738,7 @@ class SettingsMenu(QDialog):
         ai_provider_label = QLabel("Auto Host AI provider:", self)
         self.auto_host_provider_combobox = SettingsComboBox(self)
         self.auto_host_provider_combobox.addItem("OpenAI · cloud", "openai")
-        self.auto_host_provider_combobox.addItem("Local · on this Mac", "local")
+        self.auto_host_provider_combobox.addItem("Local · on this computer", "local")
         self.auto_host_provider_combobox.setCurrentIndex(max(0, self.auto_host_provider_combobox.findData(current_auto_host.get('ai_provider', 'openai'))))
 
         leniency_label = QLabel("Auto Host leniency:", self)
@@ -854,27 +824,13 @@ class SettingsMenu(QDialog):
             openai_key_hint,
         ]
 
-        self._pexels_local_llm_available = any(
-            row['name'] == 'Text generation' and row['ready'] for row in self.service_manager.results
-        )
-
         self.local_auto_host_widgets = []
-
-        local_llm_url_label = QLabel("Local LLM URL:", self)
-        self.local_llm_url_input = QLineEdit(self)
-        self.local_llm_url_input.setText(current_auto_host.get('local_llm_base_url', DEFAULT_CONFIG['auto_host']['local_llm_base_url']))
-        self.local_llm_url_input.setPlaceholderText("http://localhost:11434/v1")
-        local_llm_url_layout = QHBoxLayout()
-        local_llm_url_layout.addWidget(local_llm_url_label)
-        local_llm_url_layout.addWidget(self.local_llm_url_input)
-
-        local_llm_model_label = QLabel("Local LLM model:", self)
-        self.local_llm_model_input = QLineEdit(self)
-        self.local_llm_model_input.setText(current_auto_host.get('local_llm_model', DEFAULT_CONFIG['auto_host']['local_llm_model']))
-        self.local_llm_model_input.setPlaceholderText("qwen2.5:7b")
-        local_llm_model_layout = QHBoxLayout()
-        local_llm_model_layout.addWidget(local_llm_model_label)
-        local_llm_model_layout.addWidget(self.local_llm_model_input)
+        self.model_panel = LocalModelsPanel(self.model_manager, current_auto_host['local_llm_model'], self)
+        self.local_llm_model_input = self.model_panel.model_combo
+        self.model_migration_notice = QLabel('Local text AI now uses Ollama on this computer. Saving changes replaces your previous custom text-server address.')
+        self.model_migration_notice.setWordWrap(True)
+        self.model_migration_notice.setProperty('muted', True)
+        self.model_migration_notice.setVisible(current_auto_host['local_llm_base_url'].rstrip('/') != OLLAMA_BASE_URL)
 
         local_stt_url_label = QLabel("Local STT URL:", self)
         self.local_stt_url_input = QLineEdit(self)
@@ -957,10 +913,21 @@ class SettingsMenu(QDialog):
         self.macos_tts_custom_voice_input = QLineEdit(self)
         if current_macos_voice_index == self.macos_tts_voice_combobox.findData("__custom__"):
             self.macos_tts_custom_voice_input.setText(current_local_voice)
-        self.macos_tts_custom_voice_input.setPlaceholderText("Exact Personal Voice name from say -v ?")
+        self.macos_tts_custom_voice_input.setPlaceholderText("Exact macOS voice name")
         macos_tts_custom_voice_layout = QHBoxLayout()
         macos_tts_custom_voice_layout.addWidget(macos_tts_custom_voice_label)
         macos_tts_custom_voice_layout.addWidget(self.macos_tts_custom_voice_input)
+
+        self.personal_voice_access = PersonalVoiceAccess(self)
+        self.personal_voice_access.changed.connect(self.personal_voice_access_finished)
+        self.personal_voice_button = QPushButton("Allow Personal Voice…", self)
+        self.personal_voice_button.clicked.connect(self.request_personal_voice_access)
+        self.personal_voice_button.setEnabled(sys.platform == 'darwin')
+        self.personal_voice_status = QLabel("Request access here after enabling applications in macOS Personal Voice settings.", self)
+        self.personal_voice_status.setWordWrap(True)
+        personal_voice_layout = QHBoxLayout()
+        personal_voice_layout.addWidget(self.personal_voice_button)
+        personal_voice_layout.addWidget(self.personal_voice_status, 1)
 
         kokoro_tts_voice_label = QLabel("Kokoro voice:", self)
         self.kokoro_tts_voice_combobox = SettingsComboBox(self)
@@ -974,18 +941,12 @@ class SettingsMenu(QDialog):
         kokoro_tts_voice_layout.addWidget(kokoro_tts_voice_label)
         kokoro_tts_voice_layout.addWidget(self.kokoro_tts_voice_combobox)
 
-        local_hint = QLabel("For Personal Voice, create it in macOS Accessibility, allow applications to use it, then use the exact voice name shown by say -v ?. Use Set up in Local Services to install the voice bridge.", self)
+        local_hint = QLabel("Create Personal Voice in macOS Accessibility and allow applications to use it, then request access here. Permission applies to JParty; the separate macOS Say bridge may not support exporting Personal Voice audio. Use Set up in Local Services to install the voice bridge.", self)
         local_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         local_hint.setWordWrap(True)
         local_hint.setPalette(hint_palette)
 
-        self.local_llm_widgets = [local_llm_url_label, self.local_llm_url_input,
-                                  local_llm_model_label, self.local_llm_model_input]
         self.local_auto_host_widgets.extend([
-            local_llm_url_label,
-            self.local_llm_url_input,
-            local_llm_model_label,
-            self.local_llm_model_input,
             local_stt_url_label,
             self.local_stt_url_input,
             local_stt_model_label,
@@ -1000,6 +961,8 @@ class SettingsMenu(QDialog):
             self.macos_tts_voice_combobox,
             macos_tts_custom_voice_label,
             self.macos_tts_custom_voice_input,
+            self.personal_voice_button,
+            self.personal_voice_status,
             kokoro_tts_voice_label,
             self.kokoro_tts_voice_combobox,
             local_hint,
@@ -1019,6 +982,7 @@ class SettingsMenu(QDialog):
             macos_tts_custom_voice_label,
             self.macos_tts_custom_voice_input,
         ]
+        self.local_tts_personal_voice_widgets = [self.personal_voice_button, self.personal_voice_status]
         self.local_tts_kokoro_widgets = [
             kokoro_tts_voice_label,
             self.kokoro_tts_voice_combobox,
@@ -1030,7 +994,7 @@ class SettingsMenu(QDialog):
             widget.setPalette(QApplication.palette())
             widget.setFont(QFont("Helvetica Neue", 12))
             if isinstance(widget, QComboBox):
-                widget.setMinimumWidth(180)
+                widget.setMinimumWidth(0)
                 widget.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
                 widget.setMinimumContentsLength(16)
         self.tabs = QTabWidget(self)
@@ -1053,18 +1017,16 @@ class SettingsMenu(QDialog):
             self.tabs.addTab(scroll, title)
             return body
         def group(body, title, rows):
-            box = QGroupBox(title)
-            inner = QVBoxLayout(box)
-            inner.setContentsMargins(16, 24, 16, 16)
-            inner.setSpacing(12)
+            box, inner = settings_card(title)
             for row in rows:
                 if isinstance(row, QWidget):
                     inner.addWidget(row)
                 else:
                     row.setSpacing(12)
                     first = row.itemAt(0).widget() if row.count() else None
-                    if isinstance(first, QLabel):
-                        first.setFixedWidth(265)
+                    if isinstance(first, QLabel) and not first.property('wideLabel'):
+                        first.setFixedWidth(220)
+                        first.setWordWrap(True)
                     inner.addLayout(row)
             body.addWidget(box)
             return box
@@ -1112,27 +1074,47 @@ class SettingsMenu(QDialog):
         host_body.addStretch()
 
         self.services_tab_index = self.tabs.count()
-        services_body = page('Local Services', QLabel('Local Auto Host'), 'Your game-night stack, in one place.')
+        services_body = page('Local Services', QLabel('Local Services'), 'Choose your local AI model and manage hosting services.')
         self.services_panel = LocalServicesPanel(self.service_manager, self.service_action_config, self)
+        self.llm_group = group(services_body, 'Local AI model', [self.model_migration_notice, self.model_panel])
         group(services_body, 'Service status', [self.services_panel])
-        self.llm_group = group(services_body, 'Local LLM · text generation and answer judging', [local_llm_url_layout, local_llm_model_layout])
         self.stt_group = group(services_body, 'Speech recognition · Whisper', [local_stt_url_layout, local_stt_model_layout])
         self.voice_group = group(services_body, 'Host voice', [local_tts_preset_layout, local_tts_url_layout,
-            local_tts_model_layout, macos_tts_voice_layout, macos_tts_custom_voice_layout,
+            local_tts_model_layout, macos_tts_voice_layout, macos_tts_custom_voice_layout, personal_voice_layout,
             kokoro_tts_voice_layout, local_hint])
         self.kev_group = group(services_body, 'Answer judging · Kev', [kev_url_layout, kev_model_layout, kev_hint])
         services_body.addStretch()
 
         images_body = page('Images', images_heading, 'Replace missing clue images with photos from Pexels.')
-        self.use_pexels_checkbox.setText('Find replacement images with Pexels')
-        group(images_body, 'Image fallback', [self.use_pexels_checkbox, pexels_key_layout, self.pexels_status_label])
+        pexels_toggle_row = QHBoxLayout()
+        pexels_toggle_label = QLabel('Find replacement images with Pexels')
+        pexels_toggle_label.setProperty('wideLabel', True)
+        pexels_toggle_label.setWordWrap(True)
+        pexels_toggle_row.addWidget(pexels_toggle_label, 1)
+        pexels_toggle_row.addWidget(self.use_pexels_checkbox)
+        pexels_hint = QLabel('Local AI writes search terms to find stock photos for missing clue images. A Pexels API key and a running local model are required.')
+        pexels_hint.setWordWrap(True)
+        pexels_hint.setProperty('muted', True)
+        pexels_links = QHBoxLayout()
+        self.pexels_services_button = QPushButton('Manage local AI →')
+        self.pexels_services_button.clicked.connect(lambda: self.tabs.setCurrentIndex(self.services_tab_index))
+        self.pexels_key_button = QPushButton('Get a free Pexels API key ↗')
+        self.pexels_key_button.clicked.connect(lambda: webbrowser.open('https://www.pexels.com/api/'))
+        pexels_links.addWidget(self.pexels_services_button)
+        pexels_links.addWidget(self.pexels_key_button)
+        pexels_links.addStretch()
+        group(images_body, 'Image fallback', [pexels_toggle_row, pexels_hint, pexels_key_layout, self.pexels_status_label, pexels_links])
         images_body.addStretch()
 
         self.auto_host_provider_combobox.currentTextChanged.connect(self.update_auto_host_provider_fields)
         self.judge_provider_combobox.currentIndexChanged.connect(self.update_judge_provider_fields)
-        self.openai_api_key_input.textChanged.connect(lambda _text: self.update_pexels_fields())
+        self.pexels_api_key_input.textChanged.connect(self.update_pexels_fields)
+        self.use_pexels_checkbox.toggled.connect(self.update_pexels_fields)
+        self.model_panel.selection_changed.connect(self.update_pexels_fields)
         self.local_tts_preset_combobox.currentTextChanged.connect(lambda _text: self.update_local_tts_fields())
+        self.local_tts_preset_combobox.activated.connect(self.macos_voice_selected)
         self.macos_tts_voice_combobox.currentTextChanged.connect(lambda _text: self.update_local_tts_fields())
+        self.macos_tts_voice_combobox.activated.connect(self.macos_voice_selected)
         self.update_auto_host_provider_fields(self.auto_host_provider_combobox.currentData())
         self.update_judge_provider_fields()
         self.update_pexels_fields()
@@ -1155,6 +1137,7 @@ class SettingsMenu(QDialog):
         dialog_layout.setSpacing(14)
         dialog_layout.addWidget(self.tabs, 1)
         dialog_layout.addLayout(footer)
+        self.model_manager.changed.connect(self.update_service_controls)
         self.service_manager.changed.connect(self.update_service_controls)
         self.update_service_controls()
         self.setStyleSheet("""
@@ -1168,6 +1151,8 @@ class SettingsMenu(QDialog):
                         margin-top: 10px; padding-top: 10px; font-weight: 600; }
             QGroupBox::title { subcontrol-origin: margin; left: 16px; padding: 0 5px; }
             QLabel#pageTitle { font-size: 25px; font-weight: 700; color: #14213a; }
+            QLabel#settingsStatus { color: #3561ba; font-weight: 600; }
+            QLabel#settingsMuted { color: #66748b; font-size: 12px; }
             QLabel[muted="true"] { color: #66748b; font-size: 12px; }
             QLabel#serviceSummary { font-weight: 600; font-size: 15px; }
             QLabel#serviceRow[state="ready"] { border-left: 3px solid #24946b; }
@@ -1177,6 +1162,10 @@ class SettingsMenu(QDialog):
                                   border-radius: 6px; padding: 7px 10px; min-height: 18px; }
             QLineEdit:focus, QComboBox:focus { border: 1px solid #4777eb; }
             QComboBox::drop-down { border: 0; width: 24px; }
+            QComboBox { padding-right: 28px; }
+            QLineEdit:disabled, QComboBox:disabled { color: #8994a7; background: #edf0f5; }
+            QProgressBar { border: 0; background: #e3eaf6; border-radius: 4px; text-align: center; }
+            QProgressBar::chunk { background: #285ee8; border-radius: 4px; }
             QComboBox::down-arrow { image: none; }
             QComboBox QAbstractItemView { background: white; color: #243047; selection-background-color: #e3ebff; }
             QPushButton { background: white; border: 1px solid #cbd4e2; border-radius: 7px;
@@ -1193,10 +1182,7 @@ class SettingsMenu(QDialog):
         """)
 
     def update_service_controls(self):
-        self.apply_button.setEnabled(not self.service_manager.busy)
-        self._pexels_local_llm_available = any(
-            row['name'] == 'Text generation' and row['ready'] for row in self.service_manager.results
-        )
+        self.apply_button.setEnabled(not self.service_manager.busy and not self.model_manager.busy)
         self.update_pexels_fields()
 
     def service_action_config(self):
@@ -1220,26 +1206,29 @@ class SettingsMenu(QDialog):
         is_local = self.auto_host_provider_combobox.currentData() == "local"
         for widget in getattr(self, "openai_auto_host_widgets", []):
             widget.setVisible(not is_local)
-        needs_local_judge = self.judge_provider_combobox.currentData() == "local_binary"
         for widget in getattr(self, "local_auto_host_widgets", []):
-            widget.setVisible(is_local or (needs_local_judge and widget in self.local_llm_widgets))
+            widget.setVisible(is_local)
         self.cloud_group.setVisible(not is_local)
-        self.llm_group.setVisible(is_local or needs_local_judge)
+        self.llm_group.setVisible(True)
         for group in (self.stt_group, self.voice_group):
             group.setVisible(is_local)
         self.update_local_tts_fields()
 
-    def update_pexels_fields(self):
-        has_llm = bool(
-            os.environ.get("OPENAI_API_KEY")
-            or self.openai_api_key_input.text().strip()
-            or self._pexels_local_llm_available
-        )
-        self.use_pexels_checkbox.setEnabled(has_llm)
-        if has_llm:
-            self.pexels_status_label.setText("Stored locally on this computer. Leave blank to use PEXELS_API_KEY.")
+    def update_pexels_fields(self, *_args):
+        ready = self.model_manager.selected_ready(self.model_panel.selected_model)
+        has_key = bool(os.environ.get('PEXELS_API_KEY') or self.pexels_api_key_input.text().strip())
+        enabled = self.use_pexels_checkbox.isChecked()
+        # An enabled preference can always be switched off, even during outages.
+        self.use_pexels_checkbox.setEnabled(enabled or (ready and has_key))
+        if not ready:
+            status = 'Paused — start local AI to resume.' if enabled else 'Start local AI and choose an installed text model to enable Pexels.'
+            if not has_key:
+                status += ' Add a Pexels API key as well.'
+        elif not has_key:
+            status = 'Paused — add a Pexels API key to resume.' if enabled else 'Add a Pexels API key to enable image search.'
         else:
-            self.pexels_status_label.setText("Add an OpenAI API key or start your local LLM, then click Check status in Local Services to enable Pexels.")
+            status = 'Ready. Local AI will find replacement photos.' if enabled else 'Ready to enable image search.'
+        self.pexels_status_label.setText(status + ' Keys are stored locally; leave blank to use PEXELS_API_KEY.')
 
     def update_local_tts_fields(self):
         is_local = self.auto_host_provider_combobox.currentData() == "local"
@@ -1255,6 +1244,36 @@ class SettingsMenu(QDialog):
             widget.setVisible(is_local and ((preset == "macos_say" and macos_custom) or preset == "custom"))
         for widget in getattr(self, "local_tts_kokoro_widgets", []):
             widget.setVisible(is_local and preset == "kokoro")
+        for widget in getattr(self, "local_tts_personal_voice_widgets", []):
+            widget.setVisible(is_local and preset == "macos_say" and macos_custom)
+
+    def macos_voice_selected(self, _index):
+        if (sys.platform == 'darwin'
+                and self.local_tts_preset_combobox.currentData() in ('macos_say', 'macos_personal_voice')
+                and self.macos_tts_voice_combobox.currentData() == '__custom__'):
+            self.request_personal_voice_access()
+
+    def request_personal_voice_access(self):
+        self.personal_voice_button.setEnabled(False)
+        self.personal_voice_status.setText("Waiting for macOS Personal Voice permission…")
+        self.personal_voice_access.request()
+
+    def personal_voice_access_finished(self, result):
+        self.personal_voice_button.setEnabled(sys.platform == 'darwin')
+        status = result['status']
+        if result.get('message'):
+            message = result['message']
+        elif status == 'authorized':
+            voices = result.get('voices', [])
+            message = ('Access granted. Personal voices: ' + ', '.join(voices)) if voices else (
+                'Access granted. No Personal Voices are available yet; finish creating or downloading your voice in macOS settings.')
+        elif status == 'denied':
+            message = 'Access denied. Open System Settings → Accessibility → Personal Voice, allow applications, and enable JParty. Then try again.'
+        elif status == 'unsupported':
+            message = 'Personal Voice is not supported on this Mac. It requires a supported Apple silicon Mac and macOS 14 or later.'
+        else:
+            message = 'Personal Voice access has not been granted. Check macOS Personal Voice settings and try again.'
+        self.personal_voice_status.setText(message)
 
     def selected_macos_tts_voice(self):
         voice = self.macos_tts_voice_combobox.currentData()
@@ -1274,8 +1293,8 @@ class SettingsMenu(QDialog):
         auto_host['kev_model'] = self.kev_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['kev_model']
         auto_host['openai_api_key'] = self.openai_api_key_input.text().strip()
         auto_host['tts_voice'] = self.auto_host_voice_combobox.currentData() or 'coral'
-        auto_host['local_llm_base_url'] = self.local_llm_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_base_url']
-        auto_host['local_llm_model'] = self.local_llm_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_llm_model']
+        auto_host['local_llm_base_url'] = OLLAMA_BASE_URL
+        auto_host['local_llm_model'] = self.model_panel.selected_model
         auto_host['local_stt_base_url'] = self.local_stt_url_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_base_url']
         auto_host['local_stt_model'] = self.local_stt_model_input.text().strip() or DEFAULT_CONFIG['auto_host']['local_stt_model']
         tts_preset = self.local_tts_preset_combobox.currentData() or 'macos_say'
@@ -1302,8 +1321,8 @@ class SettingsMenu(QDialog):
 
     def save_settings(self, close=True):
         logging.info("save_settings method called")  # Debugging line
-        if self.service_manager.busy:
-            self.settings_feedback.setText("Wait for the service command to finish before saving.")
+        if self.service_manager.busy or self.model_manager.busy:
+            self.settings_feedback.setText("Wait for the service command, model download, or Ollama launch to finish before saving.")
             return
         if not self.earlybuzztimeout_combobox.hasAcceptableInput():
             self.settings_feedback.setText("Buzzer timeout must be a number from 0 to 10000 ms.")
@@ -1337,13 +1356,13 @@ class SettingsMenu(QDialog):
         earlybuzztimeout = int(self.earlybuzztimeout_combobox.text())
 
         # Show allow negative setting
-        allownegative = self.allownegative_combobox.currentData()
+        allownegative = str(self.allownegative_toggle.isChecked())
 
         # Show allow negative in final setting
-        allownegativeinfinal = self.allownegativeinfinal_combobox.currentData()
+        allownegativeinfinal = str(self.allownegativeinfinal_toggle.isChecked())
 
         # Use Wayback Machine first setting
-        use_wayback_first = bool(self.wayback_combobox.currentData())
+        use_wayback_first = self.wayback_toggle.isChecked()
 
         auto_host = self.auto_host_settings()
         if auto_host['enabled'] != bool(config.get('auto_host', {}).get('enabled')):
@@ -1413,6 +1432,7 @@ class SettingsMenu(QDialog):
             arguments = sys.argv[1:] if getattr(sys, 'frozen', False) else sys.argv
             os.execv(sys.executable, [sys.executable] + arguments)
         self._saved_auto_host = auto_host.copy()
+        self.model_migration_notice.hide()
         self.service_manager.configure(auto_host)
         self.settings_feedback.setText("Settings saved.")
         if close:

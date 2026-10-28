@@ -23,7 +23,7 @@ class LocalServicesPanel(QWidget):
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.rows = {}
-        for name in ('Text generation', 'Speech recognition', 'Host voice', 'Answer judge · Kev', 'OpenAI'):
+        for name in ('Text generation', 'Speech recognition', 'Host voice', 'Answer judge · local LLM', 'Answer judge · Kev', 'OpenAI'):
             row = QLabel()
             row.setTextFormat(Qt.TextFormat.PlainText)
             row.setWordWrap(True)
@@ -52,6 +52,8 @@ class LocalServicesPanel(QWidget):
         self.activity.setPlainText(manager.log)
         layout.addWidget(self.activity)
         manager.changed.connect(self.update_status)
+        if getattr(manager, 'models', None) is not None:
+            manager.models.changed.connect(self.update_status)
         manager.output.connect(self.append_output)
         self.update_status()
 
@@ -75,8 +77,9 @@ class LocalServicesPanel(QWidget):
                 symbol = '● Ready' if row['ready'] else '○ Needs attention'
                 detail = '' if row['ready'] else '\n' + row['detail']
                 widget.setText(f"{name}    {symbol}\n{row['endpoint']}{detail}")
+        model_busy = getattr(manager, 'models', None) is not None and manager.models.busy
         for button in self.buttons.values():
-            button.setEnabled(not manager.busy and sys.platform == 'darwin')
+            button.setEnabled(not manager.busy and not model_busy and sys.platform == 'darwin')
         self.check_button.setEnabled(not manager.checking)
         if sys.platform != 'darwin':
             self.summary.setToolTip('Service management is available on macOS. On other platforms, start servers externally and check status.')

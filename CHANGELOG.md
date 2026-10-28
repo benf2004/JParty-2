@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [2.5.1] - 2026-10-28
+
+- Select installed Ollama models and download suggested or custom text models from Settings, with progress, cancellation, and retry.
+- Guided Ollama installation and startup, with independent local-model readiness checks.
+- Consistent settings cards, aligned fields, accessible switches, and visible dropdown arrows across all five tabs.
+- Pexels image search requires a local text model and Pexels key; it pauses during outages and resumes automatically without cloud AI fallback.
+- Native macOS Personal Voice permission requests and voice discovery, with the required Mac frameworks included in desktop builds.
+
 ## [2.4.1] - 2026-10-24
 
 - Developer ID signing and hardened runtime for both Mac architectures.

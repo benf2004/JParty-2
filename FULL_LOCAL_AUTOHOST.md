@@ -4,13 +4,17 @@ This guide gets Auto Host running without paid AI APIs. Everything runs on your 
 
 ## Start from JParty
 
-1. Open **Settings → Auto Host**, choose **Local · on this Mac**, and select your answer judge.
-2. Save changes. If you enable Auto Host for the first time, JParty restarts to enable phone microphone access.
-3. Open **Settings → Local Services** and click **Set up** once to install tools and models. Choose your voice engine in this tab before setup, and save changes first.
-4. For later sessions, click **Start services**. Check each component's status and the activity log; the game becomes startable when its required services are ready, a game is loaded, and players have joined.
-5. Click **Stop services** after your session.
+1. Open **Settings → Local Services → Local AI model**. If Ollama is missing, choose **Install Ollama** and follow its installer, then choose **Open/Start Ollama**.
+2. Choose an **Installed model** or use **Download a model… → Download & select**. Qwen 2.5 7B is the existing default (about 4.7 GB); Qwen 2.5 3B is smaller (about 1.9 GB). An advanced option accepts other Ollama text-model names. Save changes to apply your selection.
+3. Open **Settings → Auto Host**, choose **Local · on this computer**, and select your answer judge. Enabling Auto Host for the first time restarts JParty to enable phone microphone access.
+4. In **Local Services**, choose your voice engine, save changes, and click **Set up** once to install the remaining speech/voice tools. This full-stack setup is separate from downloading a text model.
+5. For later sessions, click **Start services**. The game becomes startable when its required services are ready, a game is loaded, and players have joined. Click **Stop services** after your session.
 
-Setup/start/stop run in the background, and closing Settings leaves an active command running. Reopen **Settings → Local Services** to view status and progress. Save is disabled while a command is running. Automatic management is macOS-only; other platforms can use externally managed servers and the same readiness checks. If Homebrew has not been installed, install it from [brew.sh](https://brew.sh) in Terminal first; the activity log will prompt you to do so.
+Ollama runs the AI; the model dropdown chooses which downloaded AI JParty uses. Models load automatically when needed. Refresh finds models installed outside JParty, and missing or offline models remain selected with an explanation. Changing models takes effect when saved without restarting JParty. Local text AI uses Ollama on this computer; a saved custom text-server address switches to Ollama only when you save Settings.
+
+Downloads and setup/start/stop run in the background, and closing Settings leaves them running. Reopen **Settings → Local Services** to view status and progress. Downloads can be cancelled and retried. Save is disabled while a command or download runs, and full-stack commands cannot overlap model downloads. Ollama installation guidance and in-app model downloads work across platforms; automatic full-stack management remains macOS-only. If Homebrew has not been installed for full-stack setup, install it from [brew.sh](https://brew.sh) first; the activity log provides instructions.
+
+**Settings → Images → Find replacement images with Pexels** uses your selected local model to search for stock photos for missing clue images. It requires a running local text model and a Pexels API key (a link to get one is in Settings). If local AI stops, image search pauses and automatically resumes when it returns. OpenAI keys do not unlock this feature.
 
 The default answer judge uses **Qwen2.5-7B with fast true/false output**, sharing Ollama with text generation. Empty answers are rejected and normalized exact matches are accepted locally; all other answers reach the judge. See [benchmark results](benchmarks/answer_judging/RESULTS.md).
 
@@ -73,7 +77,7 @@ After that, run:
 say -v ?
 ```
 
-Use the exact Personal Voice name from that list as JParty's **Local TTS voice**. You can also run:
+In JParty's **Local Services > Host voice**, select **macOS Say / Personal Voice > Custom / Personal Voice**, then click **Allow Personal Voice…**. The app requests native macOS permission and lists available personal voices. This permission does not guarantee playback through the separate Say audio-file bridge. See `PERSONAL_VOICE_AUTOHOST.md` for details. The command above lists voices available to Say; you can also run:
 
 ```bash
 scripts/local_macos_tts_server.py --list-voices

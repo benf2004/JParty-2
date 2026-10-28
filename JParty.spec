@@ -32,7 +32,7 @@ a = Analysis(
     [str(project / 'run.py')], pathex=[str(project)], binaries=[], datas=data_files,
     hiddenimports=['PyQt6.QtWebEngineCore', 'PyQt6.QtWebEngineWidgets',
                    'PyQt6.QtMultimedia', 'PyQt6.QtMultimediaWidgets',
-                   'physicalbuzzers.physicalbuzzers'],
+                   'physicalbuzzers.physicalbuzzers'] + (['AVFoundation'] if system == 'Darwin' else []),
     hookspath=[], runtime_hooks=[],
     excludes=['tkinter', 'PyQt5', 'PySide2', 'PySide6'], noarchive=False,
 )

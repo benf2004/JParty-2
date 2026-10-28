@@ -53,7 +53,9 @@ class ServiceProbeTests(unittest.TestCase):
     def test_environment_is_noninteractive_and_matches_settings(self):
         env = script_environment({'ai_provider': 'local', 'judge_provider': 'kev',
                                   'local_stt_base_url': 'http://127.0.0.1:9002/v1',
+                                  'local_llm_model': 'qwen2.5:0.5b',
                                   'local_tts_voice': 'A personal voice'})
+        self.assertEqual(env['JPARTY_LOCAL_LLM_MODEL'], 'qwen2.5:0.5b')
         self.assertEqual(env['JPARTY_LOCAL_STT_PORT'], '9002')
         self.assertEqual(env['JPARTY_LOCAL_KEV_ENABLED'], '1')
         self.assertEqual(env['JPARTY_LOCAL_TTS_ENGINE'], 'macos')
@@ -155,7 +157,7 @@ class ServiceGuiTests(unittest.TestCase):
                 self.assertFalse(dialog.llm_group.isHidden())
                 self.assertFalse(dialog.local_llm_model_input.isHidden())
                 self.assertTrue(dialog.stt_group.isHidden())
-                dialog.local_llm_model_input.setText('another-model')
+                dialog.model_panel.select_model('another-model')
                 with self.assertRaises(ValueError):
                     dialog.service_action_config()
                 dialog.save_settings(close=False)

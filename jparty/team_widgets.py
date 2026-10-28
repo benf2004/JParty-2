@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 from jparty.teams import member_name
+from jparty.settings_widgets import settings_card
 
 
 TEAM_COLORS = ['#4361ee', '#0d9488', '#c24163', '#b87916',
@@ -101,29 +102,21 @@ class TeamSettingsPanel(QWidget):
         super().__init__(parent)
         self.game = game
         self.setObjectName('TeamSettingsPanel')
-        self.setStyleSheet(TEAM_STYLE)
         self._saved = bool(game and game.team_mode)
         body = QVBoxLayout(self)
         body.setContentsMargins(22, 22, 22, 22)
-        body.setSpacing(18)
-        hero, layout = card('teamHero')
-        layout.addWidget(label('PLAY TOGETHER', 'heroEyebrow'))
-        layout.addWidget(label('Team mode', 'heroTitle'))
-        layout.addWidget(label('Everyone gets a buzzer. Your team shares the score.', 'heroDescription'))
-        chips = QHBoxLayout()
-        for text in ['Made on phones', 'Up to 32 players', 'Individual phones']:
-            chips.addWidget(label(text, 'heroChip'))
-        chips.addStretch()
-        layout.addLayout(chips)
-        body.addWidget(hero)
+        body.setSpacing(16)
+        body.addWidget(label('Team mode', 'pageTitle'))
+        subtitle = label('Everyone gets a buzzer. Your team shares the score.')
+        subtitle.setProperty('muted', True)
+        body.addWidget(subtitle)
 
-        mode, layout = card()
+        mode, layout = settings_card('Play as teams')
         row = QHBoxLayout()
         copy = QVBoxLayout()
-        copy.addWidget(label('Play as teams', 'sectionTitle'))
-        copy.addWidget(label('Players choose a team or create their own when they join.', 'teamMuted'))
+        copy.addWidget(label('Players choose a team or create their own when they join.', 'settingsMuted'))
         row.addLayout(copy, 1)
-        self.mode_status = label('', 'teamStatus')
+        self.mode_status = label('', 'settingsStatus')
         row.addWidget(self.mode_status)
         self.enabled = TeamToggle()
         self.enabled.setFixedSize(self.enabled.sizeHint())
@@ -131,23 +124,21 @@ class TeamSettingsPanel(QWidget):
         self.enabled.setChecked(self._saved)
         row.addWidget(self.enabled)
         layout.addLayout(row)
-        self.lock_notice = label('', 'teamMuted')
+        self.lock_notice = label('', 'settingsMuted')
         layout.addWidget(self.lock_notice)
         body.addWidget(mode)
 
-        flow, layout = card()
-        layout.addWidget(label('Made by your players', 'sectionTitle'))
+        flow, layout = settings_card('Made by your players')
         layout.addWidget(label('1. Everyone types their own name and signs in on their phone.\n'
                                '2. A team’s first player types and draws its name. Teammates choose it from the list.\n'
-                               '3. When someone buzzes, their own signature appears below the team name.', 'teamMuted'))
-        layout.addWidget(label('2–8 teams can play. At least two teams need players before starting.', 'teamMuted'))
+                               '3. When someone buzzes, their own signature appears below the team name.', 'settingsMuted'))
+        layout.addWidget(label('2–8 teams can play. At least two teams need players before starting.', 'settingsMuted'))
         body.addWidget(flow)
 
-        roster, layout = card()
+        roster, layout = settings_card('Your players')
         row = QHBoxLayout()
         copy = QVBoxLayout()
-        copy.addWidget(label('Your players', 'sectionTitle'))
-        self.roster_summary = label('', 'teamMuted')
+        self.roster_summary = label('', 'settingsMuted')
         copy.addWidget(self.roster_summary)
         row.addLayout(copy, 1)
         self.roster_button = QPushButton('Manage players  →')
@@ -155,7 +146,7 @@ class TeamSettingsPanel(QWidget):
         self.roster_button.clicked.connect(self.show_roster)
         row.addWidget(self.roster_button)
         layout.addLayout(row)
-        layout.addWidget(label('Manage members and recover team controls here. Team names are created on phones.', 'teamMuted'))
+        layout.addWidget(label('Manage members and recover team controls here. Team names are created on phones.', 'settingsMuted'))
         body.addWidget(roster)
         body.addStretch()
         self.enabled.toggled.connect(self.refresh_controls)

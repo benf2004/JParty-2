@@ -15,7 +15,7 @@ NOT_FOUND_IMAGE_CONTENT = b"Not Found"
 PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
 
 _LOCAL_LLM_AVAILABILITY_CACHE = {}
-_LOCAL_LLM_CACHE_SECONDS = 30
+_LOCAL_LLM_CACHE_SECONDS = 4
 
 
 class ImageUnavailable(Exception):
@@ -43,11 +43,6 @@ def image_fallback_config(config):
     return fallback
 
 
-def openai_api_key(config):
-    auto_host = _merged_auto_host_config(config)
-    return os.environ.get("OPENAI_API_KEY") or auto_host.get("openai_api_key", "")
-
-
 def pexels_api_key(config):
     fallback = image_fallback_config(config)
     return os.environ.get("PEXELS_API_KEY") or fallback.get("pexels_api_key", "")
@@ -72,9 +67,17 @@ def local_llm_available(auto_host_config, timeout=None):
 
     available = False
     try:
-        response = requests.get(f"{base_url}/models", timeout=timeout)
-        available = bool(response.ok)
-    except requests.exceptions.RequestException:
+        ollama_url = base_url.removesuffix('/v1')
+        response = requests.get(f"{ollama_url}/api/tags", timeout=timeout)
+        response.raise_for_status()
+        from jparty.local_models import canonical_model, parse_inventory
+        models = parse_inventory(response.json())
+        if any(canonical_model(item['name']) == canonical_model(model) for item in models):
+            details = requests.post(f"{ollama_url}/api/show", json={'model': model}, timeout=timeout)
+            details.raise_for_status()
+            body = details.json()
+            available = isinstance(body, dict) and 'error' not in body and 'completion' in body.get('capabilities', ['completion'])
+    except (requests.exceptions.RequestException, ValueError, TypeError, KeyError):
         available = False
 
     _LOCAL_LLM_AVAILABILITY_CACHE[cache_key] = (now, available)
@@ -82,8 +85,6 @@ def local_llm_available(auto_host_config, timeout=None):
 
 
 def pexels_llm_available(config, check_local=True):
-    if openai_api_key(config):
-        return True
     if not check_local:
         return False
     return local_llm_available(_merged_auto_host_config(config))
@@ -225,18 +226,9 @@ class PexelsImageFallback:
         return pexels_api_key(self.config)
 
     def query_for_question(self, question):
-        query = None
         if local_llm_available(self.auto_host_config):
-            query = self._query_from_local_llm(question)
-            if query:
-                return query
-            logging.info("Local LLM did not return a usable Pexels query")
-
-        api_key = openai_api_key(self.config)
-        if api_key:
-            return self._query_from_openai(question, api_key)
-
-        logging.info("Pexels fallback skipped because no local LLM or OpenAI API key is available")
+            return self._query_from_local_llm(question)
+        logging.info("Pexels fallback paused because the selected local model is unavailable")
         return None
 
     def search_photo_url(self, query):
@@ -275,29 +267,6 @@ class PexelsImageFallback:
         )
         return _sanitize_query((data or {}).get("query"))
 
-    def _query_from_openai(self, question, api_key):
-        schema = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "pexels_image_query",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string"},
-                    },
-                    "required": ["query"],
-                    "additionalProperties": False,
-                },
-            },
-        }
-        data = self._openai_json(
-            self._query_prompt(question),
-            schema,
-            api_key,
-            timeout=_float_env("JPARTY_OPENAI_PEXELS_QUERY_TIMEOUT", "12"),
-        )
-        return _sanitize_query((data or {}).get("query"))
-
     def _local_chat_json(self, prompt, timeout=30):
         try:
             base_url = _normalize_base_url(self.auto_host_config.get("local_llm_base_url"))
@@ -317,32 +286,6 @@ class PexelsImageFallback:
             return _parse_json_object(content)
         except Exception:
             logging.exception("Pexels fallback local LLM query failed")
-            return None
-
-    def _openai_json(self, prompt, response_format, api_key, timeout=30):
-        try:
-            model = os.environ.get("JPARTY_IMAGE_QUERY_MODEL", "gpt-5-nano")
-            payload = {
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "response_format": response_format,
-            }
-            if not model.startswith("gpt-5"):
-                payload["temperature"] = 0
-            response = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
-        except Exception:
-            logging.exception("Pexels fallback OpenAI query failed")
             return None
 
     def _query_prompt(self, question):

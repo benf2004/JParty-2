@@ -80,6 +80,24 @@ class TeamSettingsTests(unittest.TestCase):
         self.dialog = SettingsMenu(self.parent)
         self.assertTrue(self.dialog.auto_host_toggle.isChecked())
 
+    def test_personal_voice_selection_requests_access_and_reports_native_result(self):
+        dialog = self.dialog
+        dialog.auto_host_provider_combobox.setCurrentIndex(dialog.auto_host_provider_combobox.findData('local'))
+        dialog.local_tts_preset_combobox.setCurrentIndex(dialog.local_tts_preset_combobox.findData('macos_say'))
+        dialog.macos_tts_voice_combobox.setCurrentIndex(dialog.macos_tts_voice_combobox.findData('__custom__'))
+        with patch('jparty.welcome_widget.sys.platform', 'darwin'), \
+                patch.object(dialog.personal_voice_access, 'request') as request:
+            dialog.macos_tts_voice_combobox.activated.emit(dialog.macos_tts_voice_combobox.currentIndex())
+            request.assert_called_once()
+            self.assertFalse(dialog.personal_voice_button.isEnabled())
+            dialog.personal_voice_access.changed.emit({'status': 'authorized', 'voices': ['My Voice']})
+            self.assertTrue(dialog.personal_voice_button.isEnabled())
+            self.assertIn('My Voice', dialog.personal_voice_status.text())
+            dialog.personal_voice_access.changed.emit({'status': 'denied', 'voices': []})
+            self.assertIn('Accessibility → Personal Voice', dialog.personal_voice_status.text())
+        dialog.local_tts_preset_combobox.setCurrentIndex(dialog.local_tts_preset_combobox.findData('kokoro'))
+        self.assertTrue(dialog.personal_voice_button.isHidden())
+
     def test_update_preference_is_draft_then_persisted_without_restart(self):
         self.assertTrue(self.dialog.update_check_toggle.isChecked())
         self.dialog.update_check_toggle.setChecked(False)

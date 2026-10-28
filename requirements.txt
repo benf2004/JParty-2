@@ -12,3 +12,9 @@ PyQt6-WebEngine-Qt6==6.6.0
 PyQt6-WebEngine==6.6.0
 websocket-client==1.7.0
 setuptools==84.2.1
+pyobjc-framework-AVFoundation==10.3.2; sys_platform == "darwin"
+pyobjc-core==10.3.2; sys_platform == "darwin"
+pyobjc-framework-Cocoa==10.3.2; sys_platform == "darwin"
+pyobjc-framework-CoreMedia==10.3.2; sys_platform == "darwin"
+pyobjc-framework-CoreAudio==10.3.2; sys_platform == "darwin"
+pyobjc-framework-Quartz==10.3.2; sys_platform == "darwin"

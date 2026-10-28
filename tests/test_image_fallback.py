@@ -4,7 +4,10 @@ from unittest.mock import patch
 
 import requests
 
-from jparty.image_fallback import NOT_FOUND_IMAGE_CONTENT, load_question_image
+from jparty.image_fallback import (
+    NOT_FOUND_IMAGE_CONTENT, load_question_image, local_llm_available,
+    pexels_llm_available, _LOCAL_LLM_AVAILABILITY_CACHE,
+)
 
 
 class FakeQuestion:
@@ -51,6 +54,9 @@ def fallback_config(openai_key="openai-key", pexels_key="pexels-key"):
 
 
 class ImageFallbackTests(unittest.TestCase):
+    def setUp(self):
+        _LOCAL_LLM_AVAILABILITY_CACHE.clear()
+
     @patch.dict(os.environ, {"OPENAI_API_KEY": "", "PEXELS_API_KEY": ""})
     def test_working_jarchive_image_does_not_call_pexels(self):
         question = FakeQuestion("https://www.j-archive.com/media/2026-05-28_J_29.jpg")
@@ -139,41 +145,63 @@ class ImageFallbackTests(unittest.TestCase):
         fallback_mock.assert_not_called()
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "", "PEXELS_API_KEY": ""})
-    def test_openai_generates_query_when_local_llm_is_unavailable(self):
+    def test_cloud_key_does_not_bypass_unavailable_local_model(self):
         question = FakeQuestion("https://www.j-archive.com/media/2026-05-28_J_29.jpg")
-        pexels_json = {
-            "photos": [
-                {
-                    "src": {
-                        "large2x": "https://images.pexels.com/photos/arena.jpeg",
-                    }
-                }
-            ]
-        }
-
         with patch("jparty.image_fallback.local_llm_available", return_value=False), patch(
             "jparty.image_fallback.requests.post"
         ) as post_mock, patch("jparty.image_fallback.requests.get") as get_mock:
-            post_mock.return_value = FakeResponse(
-                json_data={"choices": [{"message": {"content": '{"query": "professional basketball arena"}'}}]},
-                content=b"{}",
-            )
-            get_mock.side_effect = [
-                FakeResponse(
-                    content=b"<html>not found</html>",
-                    status_code=404,
-                    headers={"Content-Type": "text/html"},
-                ),
-                FakeResponse(json_data=pexels_json, content=b"{}", headers={"Content-Type": "application/json"}),
-                FakeResponse(content=b"pexels-openai-image", headers={"Content-Type": "image/jpeg"}),
-            ]
+            get_mock.return_value = FakeResponse(
+                content=b"<html>not found</html>", status_code=404,
+                headers={"Content-Type": "text/html"})
 
             content = load_question_image(question, fallback_config(openai_key="saved-openai-key"))
 
-        self.assertEqual(content, b"pexels-openai-image")
-        self.assertEqual(post_mock.call_args.args[0], "https://api.openai.com/v1/chat/completions")
-        self.assertEqual(post_mock.call_args.kwargs["headers"]["Authorization"], "Bearer saved-openai-key")
-        self.assertEqual(get_mock.call_args_list[1].kwargs["params"]["query"], "professional basketball arena")
+        self.assertEqual(content, NOT_FOUND_IMAGE_CONTENT)
+        post_mock.assert_not_called()
+        self.assertEqual(get_mock.call_count, 1)
+
+    def test_reachable_server_must_contain_selected_model(self):
+        config = fallback_config()['auto_host']
+        with patch('jparty.image_fallback.requests.get', return_value=FakeResponse(
+                json_data={'models': [{'name': 'another-model:latest'}]})):
+            self.assertFalse(local_llm_available(config))
+        config['local_llm_model'] = 'another-model'
+        with patch('jparty.image_fallback.requests.get', return_value=FakeResponse(
+                json_data={'models': [{'name': 'another-model:latest'}]})), patch(
+                    'jparty.image_fallback.requests.post', return_value=FakeResponse(json_data={'capabilities': ['completion']})):
+            self.assertTrue(local_llm_available(config))
+
+    def test_invalid_inventory_is_unavailable(self):
+        for body in ({}, {'models': None}, {'models': [{}]}):
+            _LOCAL_LLM_AVAILABILITY_CACHE.clear()
+            with self.subTest(body=body), patch('jparty.image_fallback.requests.get',
+                    return_value=FakeResponse(json_data=body)):
+                self.assertFalse(local_llm_available(fallback_config()['auto_host']))
+
+    def test_cloud_alias_and_embedding_models_are_not_available_for_images(self):
+        config = fallback_config()['auto_host']
+        with patch('jparty.image_fallback.requests.get', return_value=FakeResponse(
+                json_data={'models': [{'name': 'qwen2.5:7b', 'remote_host': 'ollama.com'}]})), patch(
+                    'jparty.image_fallback.requests.post') as post:
+            self.assertFalse(local_llm_available(config))
+            post.assert_not_called()
+        _LOCAL_LLM_AVAILABILITY_CACHE.clear()
+        with patch('jparty.image_fallback.requests.get', return_value=FakeResponse(
+                json_data={'models': [{'name': 'qwen2.5:7b'}]})), patch(
+                    'jparty.image_fallback.requests.post', return_value=FakeResponse(json_data={'capabilities': ['embedding']})):
+            self.assertFalse(local_llm_available(config))
+
+    def test_availability_expires_and_recovers_without_changing_preference(self):
+        config = fallback_config()
+        with patch('jparty.image_fallback.time.time', return_value=100), patch(
+                'jparty.image_fallback.requests.get', side_effect=requests.exceptions.ConnectionError):
+            self.assertFalse(pexels_llm_available(config))
+        with patch('jparty.image_fallback.time.time', return_value=105), patch(
+                'jparty.image_fallback.requests.get', return_value=FakeResponse(
+                    json_data={'models': [{'name': 'qwen2.5:7b'}]})), patch(
+                    'jparty.image_fallback.requests.post', return_value=FakeResponse(json_data={'capabilities': ['completion']})):
+            self.assertTrue(pexels_llm_available(config))
+        self.assertTrue(config['image_fallback']['use_pexels'])
 
     @patch.dict(os.environ, {"OPENAI_API_KEY": "", "PEXELS_API_KEY": ""})
     def test_missing_pexels_key_skips_fallback(self):

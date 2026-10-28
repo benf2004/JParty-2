@@ -56,9 +56,9 @@ Manual host controls remain available. The host can still adjust scores from the
 
 Auto Host settings live in the regular JParty Settings dialog.
 
-Settings are organized into **Game**, **Auto Host**, **Local Services**, and **Images** tabs. Save changes without closing the dialog. Turning Auto Host on/off or changing the theme still restarts JParty.
+Settings are organized into **Game**, **Team mode**, **Auto Host**, **Local Services**, and **Images** tabs. Save changes without closing the dialog. Turning Auto Host on/off or changing the theme still restarts JParty.
 
-On macOS, **Local Services** provides **Set up**, **Start services**, **Stop services**, and **Check status**, with live command output. Save your Auto Host settings before setup/start. Setup installs the local tools and downloads models; start uses installed models. If Homebrew is missing, the activity log explains how to install it in Terminal before trying setup again. Custom remote endpoints can be checked, but must be managed externally.
+On macOS, **Local Services** provides **Set up**, **Start services**, **Stop services**, and **Check status**, with live command output. Save your Auto Host settings before setup/start. Setup installs the local tools and downloads models; start uses installed models. If Homebrew is missing, the activity log explains how to install it in Terminal before trying setup again. Voice, speech recognition, and Kev can still use externally managed endpoints. Local text AI uses Ollama on this computer.
 
 With Auto Host enabled, JParty blocks desktop and phone game starts until the required services are ready. Local checks verify the text-generation model, speech-recognition endpoint, voice endpoint, and the selected answer-judging model (including local judging with cloud generation). Status refreshes automatically, and a fresh check runs after the countdown before the game begins. If a service drops during the countdown, the start is cancelled. Manual-host games do not require AI services. For OpenAI, the readiness check verifies an API key is configured; it does not validate credentials or cloud availability.
 
@@ -66,7 +66,7 @@ Current settings include:
 
 - **Auto Host**: enables or disables the feature.
 - **Auto Host AI provider**: currently `openai` or `local`.
-- **Answer judge**: defaults to the local LLM with fast true/false output (Qwen2.5-7B). It receives the full clue, expected answer, player response, and leniency. It shares the configured local LLM URL/model with text generation. You can also select the Auto Host AI provider or optional Kev. Binary judgments have no model confidence score; the payload reports `null`. Only empty answers and normalized exact matches bypass the model. If judging fails, unmatched answers are rejected with an unavailable reason rather than accepted by fuzzy matching.
+- **Answer judge**: defaults to the local LLM with fast true/false output (Qwen2.5-7B). It receives the full clue, expected answer, player response, and leniency. It shares the selected Ollama model with text generation. You can also select the Auto Host AI provider or optional Kev. Binary judgments have no model confidence score; the payload reports `null`. Only empty answers and normalized exact matches bypass the model. If judging fails, unmatched answers are rejected with an unavailable reason rather than accepted by fuzzy matching.
 - **Kev URL / served model**: defaults to `http://localhost:8009/v1` and `kev-latest`.
 - **Auto Host leniency**: controls answer-judging strictness.
 - **Auto Host voice**: selects the OpenAI TTS voice.
@@ -91,52 +91,32 @@ Local Auto Host lets JParty use AI services running on your own computer instead
 
 The pieces are:
 
-- **Local model runner**: an app such as Ollama or LM Studio that runs a local LLM.
+- **Ollama**: the app that runs a downloaded text model on your computer. Ollama is the runner, not the model name.
 - **LLM**: the text brain that parses clue choices and judges ambiguous answers.
 - **STT**: speech-to-text; turns player microphone recordings into text.
 - **TTS**: text-to-speech; turns host lines into spoken audio.
 
 JParty does not install or start these services during a game. In local mode it connects to services you already started.
 
-### Beginner LLM Path: Ollama
+### Choose and download a model in JParty
 
-For a 16 GB Apple Silicon Mac, start with:
+1. Open **Settings → Local Services → Local AI model**. This card is available even when Auto Host is off or uses OpenAI.
+2. If needed, choose **Install Ollama**. Follow the official installer instructions for your platform, then choose **Open/Start Ollama** in JParty. Installation is guided; it does not require running JParty's full speech/voice setup.
+3. Choose an **Installed model** from the dropdown. JParty lists downloaded models and their sizes; a model does not have to be loaded in memory to appear.
+4. To add a model, choose **Download a model…**. Qwen 2.5 7B is JParty's existing default (about 4.7 GB); Qwen 2.5 3B is a smaller option (about 1.9 GB). **Other model** accepts an Ollama text-model name. Downloads need internet and free disk space.
+5. Choose **Download & select**, then **Save changes** when the download finishes. Switching models does not restart JParty.
 
-```text
-qwen2.5:7b
-```
+Downloads show progress and can be cancelled and retried. Closing Settings keeps a download running; reopen the tab to see progress. Refresh detects models installed outside JParty. If a saved model is missing, JParty keeps its selection and explains how to download it or choose another model.
 
-If that feels slow, use:
+Local text AI uses Ollama at `http://localhost:11434/v1`. Existing custom text-server addresses remain saved until you save Settings, which switches them to local Ollama. LM Studio and other text servers are no longer offered in Settings. Speech recognition, voice, and Kev retain their own configuration.
 
-```text
-llama3.2:3b
-```
+The macOS **Set up** and **Start services** buttons still manage the complete local Auto Host stack using your saved model selection. Save before using these actions. Model downloads alone do not install Whisper, voice services, or Kev. These commands and model downloads cannot run at the same time.
 
-If you want to try a heavier 7B model, use:
+### Replacement clue images
 
-```text
-mistral:7b
-```
+In **Settings → Images**, **Find replacement images with Pexels** uses the selected local model to write search terms for stock photos. It only replaces missing J-Archive media images. Add a free Pexels API key using the link in Settings, or provide `PEXELS_API_KEY` in your environment.
 
-The helper script installs/checks Homebrew, Ollama, and ffmpeg, starts Ollama if needed, pulls the default model, and prints the settings to copy into JParty:
-
-```bash
-scripts/setup_local_auto_host_macos.sh
-```
-
-To use a smaller model:
-
-```bash
-JPARTY_LOCAL_LLM_MODEL=llama3.2:3b scripts/setup_local_auto_host_macos.sh
-```
-
-Default JParty local LLM settings:
-
-```text
-Auto Host AI provider: local
-Local LLM URL: http://localhost:11434/v1
-Local LLM model: qwen2.5:7b
-```
+The switch can be enabled only when the local text model is available and a Pexels key is configured. If local AI stops, the preference stays on but image search pauses; it resumes automatically when that model returns. You can turn the switch off while paused. An OpenAI key does not enable this feature, and image search never falls back to cloud AI.
 
 ### Local Speech-To-Text
 
@@ -182,15 +162,6 @@ macOS Say voice: Custom / Personal Voice, then your exact Personal Voice name
 ```
 
 If TTS is not running or fails, the game continues without spoken host audio.
-
-### LM Studio Alternative
-
-LM Studio is a good option if you prefer a graphical app for downloading and swapping models. Start its local OpenAI-compatible server, then set:
-
-```text
-Local LLM URL: http://localhost:1234/v1
-Local LLM model: the loaded model name shown in LM Studio
-```
 
 ## Local HTTPS And Microphone Access
 

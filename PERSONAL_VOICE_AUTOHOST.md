@@ -1,19 +1,25 @@
 # Personal Voice Auto Host
 
-JParty can use your macOS Personal Voice through the built-in Mac speech system. No extra voice add-on is needed.
+JParty can request permission to access your macOS Personal Voice from its settings. Permission and voice playback are separate: the current macOS Say bridge exports speech to audio files and does not guarantee Personal Voice playback.
 
 ## Set Up Your Voice In macOS
 
 1. Open **System Settings > Accessibility > Personal Voice**.
 2. Create a Personal Voice and wait for macOS to finish processing it.
 3. Turn on **Allow applications to use your Personal Voice**.
-4. In Terminal, run:
+4. In JParty, open **Settings > Local Services > Host voice**, choose **macOS Say / Personal Voice**, then **Custom / Personal Voice**.
+5. JParty requests access using Apple's native Personal Voice authorization dialog. Click **Allow**. You can also click **Allow Personal Voice…** to request or check access again.
+6. The status shows whether access was granted and lists available Personal Voices. If denied, enable JParty under macOS **Accessibility > Personal Voice** and try again. General **Privacy & Security > Accessibility** permission is not required.
+
+Use an updated packaged JParty app so the request belongs to JParty. When running from Python, macOS may associate permission with the development launcher. Source installs need the macOS dependencies in `requirements.txt`. The native API requires macOS 14 or later on supported hardware.
+
+For standard system voices supported by the separate Say bridge, list names with:
 
 ```bash
 say -v ?
 ```
 
-Find the exact name of your Personal Voice in that list.
+Personal Voices visible to JParty's native API may not appear in this command. Granting access to JParty does not grant it to an independently launched speech service or Kokoro.
 
 ## Start The JParty Voice Bridge
 
@@ -45,7 +51,7 @@ Local TTS: macOS Say / Personal Voice
 Local TTS URL: http://localhost:8880/v1
 Local TTS model: macos-say
 macOS Say voice: Custom / Personal Voice
-Custom macOS voice name: the exact Personal Voice name from say -v ?
+Custom macOS voice name: an exact voice name supported by the Say bridge
 ```
 
 If you leave the voice blank, macOS uses its current default speech voice.

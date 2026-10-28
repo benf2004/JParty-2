@@ -34,7 +34,11 @@ def check_services(config):
         items = body.get('models' if kev else 'data', [])
         key = 'name' if kev else 'id'
         names = [item.get(key) for item in items]
-        if model not in names:
+        # Ollama accepts an omitted tag as :latest; its inventory includes the tag.
+        from jparty.local_models import canonical_model
+        found = model in names if kev else any(
+            isinstance(name, str) and canonical_model(name) == canonical_model(model) for name in names)
+        if not found:
             raise ValueError(f'Model {model} is not loaded')
 
     if config['ai_provider'] == 'local':
@@ -192,6 +196,8 @@ class LocalServiceManager(QObject):
     def run(self, action, config):
         if self.busy:
             return
+        if getattr(self, 'models', None) is not None and self.models.busy:
+            raise ValueError('Wait for the model download or Ollama launch to finish before managing services.')
         if sys.platform != 'darwin':
             raise ValueError('Automatic service management is available on macOS. Start your servers externally, then check status.')
         if action not in ('setup', 'start', 'stop'):

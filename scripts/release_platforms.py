@@ -14,6 +14,9 @@ def release_platforms(version):
     # Intel notarization blocks 2.5.0. Omit it only for this release.
     if version == '2.5.0':
         platforms = [item for item in platforms if item['platform'] != 'macos-x64']
+    # Try the supported macOS 14 image while the macOS 15 arm64 pool is constrained.
+    if version == '2.5.1':
+        platforms[0]['os'] = 'macos-14'
     return platforms
 
 

@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: macos-15
+    # Keep the preliminary checks off the capacity-constrained arm64 pool.
+    runs-on: macos-15-intel
     timeout-minutes: 15
     outputs:
       matrix: ${{ steps.platforms.outputs.matrix }}

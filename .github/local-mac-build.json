@@ -1,0 +1,31 @@
+{
+  "version": "2.5.1",
+  "source_commit": "2b808408b03d287b1078435b09830900d106a5a0",
+  "source_run": 40928284662,
+  "archive_name": "JParty-2.5.1-macos-arm64.local-signed.zip",
+  "archive_sha256": "690099b56840c8a6dbde4af2c49d1e623189169ab9a125d207f54bd0f22889b4",
+  "smoke": {
+    "status": "ok",
+    "version": "2.5.1",
+    "platform": "Darwin",
+    "architecture": "arm64",
+    "frozen": true,
+    "settings_tabs": [
+      "Game",
+      "Team mode",
+      "Auto Host",
+      "Local Services",
+      "Images"
+    ],
+    "phone_assets": "bundled",
+    "models": "optional first-run downloads",
+    "updates": "ask before download; lobby restart; bundled installers",
+    "auto_host_control": "toggle; default off",
+    "audio": {
+      "theme_recordings": 27,
+      "shared_files": 22,
+      "mp3_tracks_decoded": 7,
+      "effects": "lossless WAV"
+    }
+  }
+}

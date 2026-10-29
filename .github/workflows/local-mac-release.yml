@@ -1,0 +1,116 @@
+name: Publish locally built Apple Silicon release
+
+on:
+  push:
+    branches: ['codex/local-arm-release-*']
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: local-mac-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    outputs:
+      source_run: ${{ steps.manifest.outputs.source_run }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - name: Verify source builds and prepare draft release
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -m unittest discover -s tests -p test_local_mac_release.py -q
+          python3 scripts/release_local_mac.py prepare
+          python3 - <<'PYTHON'
+          import json, os
+          manifest = json.load(open('.github/local-mac-build.json'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+              stream.write(f"source_run={manifest['source_run']}\n")
+          PYTHON
+      - name: Wait for the locally signed app upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=$(python3 -c 'from jparty.version import version; print("v" + version)')
+          ASSET=$(python3 -c 'import json; print(json.load(open(".github/local-mac-build.json"))["archive_name"])')
+          mkdir -p local-input
+          for attempt in $(seq 1 180); do
+            if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ASSET" --dir local-input --clobber 2>/dev/null; then
+              python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          from scripts.release_local_mac import validate_input
+          manifest = json.load(open('.github/local-mac-build.json'))
+          validate_input(Path('local-input') / manifest['archive_name'], manifest)
+          PYTHON
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'The locally signed Mac upload has not arrived. The release remains a draft.' >&2
+          exit 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pinned-local-arm-input
+          path: local-input/*
+          compression-level: 0
+          retention-days: 3
+
+  notarize_and_publish:
+    needs: prepare
+    runs-on: macos-15-intel
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          run-id: ${{ needs.prepare.outputs.source_run }}
+          github-token: ${{ github.token }}
+          pattern: JParty-*
+          path: release-assets
+          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: pinned-local-arm-input
+          path: local-input
+      - name: Install Developer ID and validate notarization credentials
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: python scripts/macos_signing.py install
+      - name: Notarize the pinned local Mac app and publish all four downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ASSET=$(python -c 'import json; print(json.load(open(".github/local-mac-build.json"))["archive_name"])')
+          python scripts/release_local_mac.py finalize --archive "local-input/$ASSET"
+          python scripts/release_local_mac.py publish
+      - name: Apple notarization diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: local-arm-notarization-diagnostics
+          path: release-assets/*.notarization.json
+          if-no-files-found: ignore
+      - name: Remove temporary signing keychain
+        if: always()
+        run: python scripts/macos_signing.py cleanup

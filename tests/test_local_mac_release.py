@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from jparty.version import version
-from scripts.release_local_mac import check_source, digest, validate_assets, validate_input
+from scripts.release_local_mac import check_source, digest, draft, validate_assets, validate_input
 
 
 class LocalMacReleaseTests(unittest.TestCase):
@@ -41,6 +41,20 @@ class LocalMacReleaseTests(unittest.TestCase):
         manifest = dict(self.manifest, version='0.0.0')
         with self.assertRaises(ValueError):
             validate_input(self.archive, manifest)
+
+    @patch.dict(os.environ, {'GITHUB_REPOSITORY': 'owner/JParty', 'GITHUB_SHA': 'current'})
+    def test_only_the_explicit_previous_handoff_draft_can_be_updated(self):
+        manifest = dict(self.manifest, previous_handoff_revisions=['our-previous-handoff'])
+        for state in ({'isDraft': False, 'targetCommitish': 'our-previous-handoff'},
+                      {'isDraft': True, 'targetCommitish': 'someone-elses-draft'}):
+            with patch('scripts.release_local_mac.subprocess.run', return_value=Mock(
+                    returncode=0, stdout=json.dumps(state))), self.assertRaises(ValueError):
+                draft(manifest)
+        with patch('scripts.release_local_mac.subprocess.run', return_value=Mock(returncode=0,
+                stdout=json.dumps({'isDraft': True, 'targetCommitish': 'our-previous-handoff'}))), patch(
+                    'scripts.release_local_mac.gh') as request:
+            draft(manifest)
+            request.assert_called_once_with('release', 'edit', 'v' + version, '--repo', 'owner/JParty', '--target', 'current')
 
     @patch.dict(os.environ, {'GITHUB_REPOSITORY': 'owner/JParty'})
     def test_reused_packages_must_have_passed_at_the_exact_source_revision(self):

@@ -27,5 +27,8 @@
       "mp3_tracks_decoded": 7,
       "effects": "lossless WAV"
     }
-  }
+  },
+  "previous_handoff_revisions": [
+    "acd766b633406cb7b8e5508cc5504365b022a88b"
+  ]
 }

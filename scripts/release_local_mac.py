@@ -59,7 +59,7 @@ def check_source(manifest):
         raise ValueError('Application sources changed after the local and hosted builds.')
 
 
-def draft():
+def draft(manifest):
     repository, revision = os.environ['GITHUB_REPOSITORY'], os.environ['GITHUB_SHA']
     tag = 'v' + version
     result = subprocess.run(['gh', 'release', 'view', tag, '--repo', repository,
@@ -69,7 +69,11 @@ def draft():
            '--draft', '--title', 'JParty ' + tag, '--notes-file', PROJECT / 'RELEASE_NOTES.md')
     else:
         release = json.loads(result.stdout)
-        if release != {'isDraft': True, 'targetCommitish': revision}:
+        if release == {'isDraft': True, 'targetCommitish': revision}:
+            return
+        if release.get('isDraft') is True and release.get('targetCommitish') in manifest.get('previous_handoff_revisions', []):
+            gh('release', 'edit', tag, '--repo', repository, '--target', revision)
+        else:
             raise ValueError('Refusing to replace a published release or another revision’s draft.')
 
 
@@ -89,7 +93,7 @@ def finalize(archive, manifest, output):
             raise ValueError('The local app must contain an Apple Silicon executable.')
         command(['codesign', '--verify', '--deep', '--strict', app], 'Verify local app signature', timeout=180)
         certificates = str(Path(directory) / 'signing-certificate-')
-        command(['codesign', '-d', '--extract-certificates', certificates, app], 'Read local signing certificate')
+        command(['codesign', '-d', '--extract-certificates=' + certificates, app], 'Read local signing certificate')
         expected = PROJECT / 'resources/signing/developer-id-application.cer'
         if Path(certificates + '0').read_bytes() != expected.read_bytes():
             raise ValueError('The local app must use the repository’s release signing identity.')
@@ -131,12 +135,12 @@ def main():
     manifest = json.loads(args.manifest.read_text())
     if args.action == 'prepare':
         check_source(manifest)
-        draft()
+        draft(manifest)
     elif args.action == 'finalize':
         finalize(args.archive, manifest, args.assets)
     else:
         validate_assets(args.assets)
-        draft()  # Verify ownership of this still-unpublished draft immediately before mutation.
+        draft(manifest)  # Verify ownership of this still-unpublished draft immediately before mutation.
         repository, tag = os.environ['GITHUB_REPOSITORY'], 'v' + version
         gh('release', 'upload', tag, *sorted(args.assets.iterdir()), '--repo', repository, '--clobber')
         gh('release', 'delete-asset', tag, manifest['archive_name'], '--repo', repository, '--yes')
